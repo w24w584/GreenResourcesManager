@@ -123,6 +123,24 @@ export abstract class BaseResources {
 	comment: ResourceField<string> = new ResourceField<string>({
 		saveable: true
 	})
+
+	/** 资源所属分类 */
+	category: ResourceField<string> = new ResourceField<string>({
+		saveable: true,
+		editType: new FormField_Text('资源分类', false)
+	})
+
+	/** AI 可填充的来源资料 */
+	sourceInfo: ResourceField<string> = new ResourceField<string>({
+		saveable: true,
+		editType: new FormField_Text('来源信息', false)
+	})
+
+	/** 资源发布日期 */
+	publishDate: ResourceField<string> = new ResourceField<string>({
+		saveable: true,
+		editType: new FormField_Text('发布日期', false)
+	})
 	
 	/**
 	 * 是否为收藏

@@ -114,6 +114,8 @@
             :settings="settings"
             @update:settings="handleSettingUpdate"
           />
+
+          <AISettings v-if="currentCategory === 'ai'" />
         </div>
         
       </div>
@@ -142,6 +144,7 @@ import ArchiveSettings from '../components/settings/ArchiveSettings.vue'
 import PetSettings from '../components/settings/PetSettings.vue'
 import PersonalizationSettings from '../components/settings/PersonalizationSettings.vue'
 import PageManagementSettings from '../components/settings/PageManagementSettings.vue'
+import AISettings from '../components/settings/AISettings.vue'
 
 export default {
   name: 'SettingsView',
@@ -157,7 +160,8 @@ export default {
     ArchiveSettings,
     PetSettings,
     PersonalizationSettings,
-    PageManagementSettings
+    PageManagementSettings,
+    AISettings
   },
   setup() {
     const { t } = useI18n()
@@ -169,6 +173,7 @@ export default {
       settingsCategories: [
         { id: 'general', name: '通用', icon: '⚙️', description: '应用的基本设置和外观配置' },
         { id: 'personalization', name: '个性化', icon: '🎨', description: '个性化外观和主题设置' },
+        { id: 'ai', name: 'AI 设置', icon: 'AI', description: '配置 AI 服务商和本地密钥' },
         { id: 'pageManagement', name: '页面管理', icon: '🧩', description: '添加/编辑/排序/隐藏自定义页面' },
         { id: 'games', name: '游戏', icon: '🎮', description: '游戏相关的设置选项' },
         { id: 'images', name: '图片', icon: '🖼️', description: '图片管理和显示设置' },

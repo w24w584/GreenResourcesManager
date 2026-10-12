@@ -3,6 +3,7 @@
   "categories": {
     "general": "一般",
     "personalization": "パーソナライズ",
+    "ai": "AI 設定",
     "pageManagement": "ページ管理",
     "games": "ゲーム",
     "images": "画像",
@@ -17,6 +18,7 @@
   "descriptions": {
     "general": "アプリケーションの基本設定と外観設定",
     "personalization": "パーソナライズされた外観とテーマ設定",
+    "ai": "AI プロバイダー、モデル、ローカル API キーを設定",
     "pageManagement": "カスタムページの追加/編集/並び替え/非表示",
     "games": "ゲーム関連の設定オプション",
     "images": "画像管理と表示設定",

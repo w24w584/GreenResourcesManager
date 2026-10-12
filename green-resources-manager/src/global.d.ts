@@ -225,6 +225,11 @@ declare global {
       sqliteMigrateSettings: (customSaveDataPath?: string) => Promise<{ ok: boolean; message?: string }>
       sqliteGetSettings: () => Promise<{ ok: boolean; settings?: any; timestamp?: string; version?: string; message?: string }>
       sqliteSaveSettings: (settings: any) => Promise<{ ok: boolean; message?: string }>
+      aiGetConfig: () => Promise<{ provider: string; model: string; baseUrl: string; hasApiKey: boolean }>
+      aiSaveConfig: (config: { provider: string; model: string; baseUrl: string; apiKey: string }) => Promise<{ ok: boolean; config?: { provider: string; model: string; baseUrl: string; hasApiKey: boolean }; error?: string }>
+      aiResetConfig: () => Promise<{ ok: boolean; config: { provider: string; model: string; baseUrl: string; hasApiKey: boolean } }>
+      aiTestConnection: (config: { provider: string; model: string; baseUrl: string; apiKey: string }) => Promise<{ ok: boolean; message?: string; error?: string }>
+      aiGenerateResourceInfo: (query: string) => Promise<{ ok: boolean; data?: { title: string; summary: string; category: string; tags: string[]; source: string; publishDate: string }; error?: string }>
       sqliteMigrateUser: (customSaveDataPath?: string) => Promise<{ ok: boolean; message?: string }>
       sqliteGetUser: () => Promise<{ ok: boolean; user?: any; timestamp?: string; version?: string; message?: string }>
       sqliteSaveUser: (user: any) => Promise<{ ok: boolean; message?: string }>

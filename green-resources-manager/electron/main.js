@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, shell, screen, nativeImage, protocol } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, shell, screen, nativeImage, protocol, safeStorage } = require('electron')
 const { autoUpdater } = require('electron-updater')
 const path = require('path')
 const { spawn } = require('child_process')
@@ -24,6 +24,7 @@ const fileHandlers = require('./ipc/file-handlers')
 const pathHandlers = require('./ipc/path-handlers')
 const systemHandlers = require('./ipc/system-handlers')
 const settingsHandlers = require('./ipc/settings-handlers')
+const aiHandlers = require('./ipc/ai-handlers')
 const mediaHandlers = require('./ipc/media-handlers')
 const tabHandlers = require('./ipc/tab-handlers')
 // 引入工具模块
@@ -196,6 +197,9 @@ if (!gotTheLock) {
     
     // 注册设置相关的 IPC 处理器
     settingsHandlers.registerIpcHandlers(ipcMain, app, dialog, () => mainWindowModule.getMainWindow())
+
+    // 注册 AI 配置和请求处理器，API 密钥只保存在主进程
+    aiHandlers.registerIpcHandlers(ipcMain, app, safeStorage)
     
     // 注册媒体相关的 IPC 处理器
     mediaHandlers.registerIpcHandlers(ipcMain, shell, pathUtils)

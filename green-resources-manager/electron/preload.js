@@ -111,6 +111,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sqliteGetSettings: () => ipcRenderer.invoke('sqlite-get-settings'),
   // 保存设置数据到 SQLite
   sqliteSaveSettings: (settings) => ipcRenderer.invoke('sqlite-save-settings', settings),
+  // AI 配置和请求仅通过主进程访问，配置查询不会返回 API 密钥
+  aiGetConfig: () => ipcRenderer.invoke('ai:get-config'),
+  aiSaveConfig: (config) => ipcRenderer.invoke('ai:save-config', config),
+  aiResetConfig: () => ipcRenderer.invoke('ai:reset-config'),
+  aiTestConnection: (config) => ipcRenderer.invoke('ai:test-connection', config),
+  aiGenerateResourceInfo: (query) => ipcRenderer.invoke('ai:generate-resource-info', query),
   // 从 JSON 迁移用户数据到 SQLite
   sqliteMigrateUser: (customSaveDataPath) => ipcRenderer.invoke('sqlite-migrate-user', customSaveDataPath),
   // 从 SQLite 读取用户数据

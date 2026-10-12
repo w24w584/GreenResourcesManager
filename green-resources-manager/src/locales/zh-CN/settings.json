@@ -3,6 +3,7 @@
   "categories": {
     "general": "通用",
     "personalization": "个性化",
+    "ai": "AI 设置",
     "pageManagement": "页面管理",
     "games": "游戏",
     "images": "图片",
@@ -17,6 +18,7 @@
   "descriptions": {
     "general": "应用的基本设置和外观配置",
     "personalization": "个性化外观和主题设置",
+    "ai": "配置 AI 服务商、模型和本地密钥",
     "pageManagement": "添加/编辑/排序/隐藏自定义页面",
     "games": "游戏相关的设置选项",
     "images": "图片管理和显示设置",

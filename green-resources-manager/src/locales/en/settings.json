@@ -3,6 +3,7 @@
   "categories": {
     "general": "General",
     "personalization": "Personalization",
+    "ai": "AI",
     "pageManagement": "Page Management",
     "games": "Games",
     "images": "Images",
@@ -17,6 +18,7 @@
   "descriptions": {
     "general": "Basic application settings and appearance configuration",
     "personalization": "Personalized appearance and theme settings",
+    "ai": "Configure the AI provider, model, and local API key",
     "pageManagement": "Add/Edit/Sort/Hide custom pages",
     "games": "Game-related settings",
     "images": "Image management and display settings",

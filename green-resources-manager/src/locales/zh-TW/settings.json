@@ -3,6 +3,7 @@
   "categories": {
     "general": "一般",
     "personalization": "個人化",
+    "ai": "AI 設定",
     "pageManagement": "頁面管理",
     "games": "遊戲",
     "images": "圖片",
@@ -17,6 +18,7 @@
   "descriptions": {
     "general": "應用程式的基本設定和外觀配置",
     "personalization": "個人化外觀和主題設定",
+    "ai": "設定 AI 服務商、模型和本機密鑰",
     "pageManagement": "新增/編輯/排序/隱藏自訂頁面",
     "games": "遊戲相關的設定選項",
     "images": "圖片管理和顯示設定",

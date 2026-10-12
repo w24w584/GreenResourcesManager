@@ -34,11 +34,6 @@ export class Other extends BaseResources {
 		editType: new FormField_Textarea('资源简介', false)
 	})
 	
-	category: ResourceField<string> = new ResourceField<string>({
-		saveable: true,
-		editType: new FormField_Text('资源分类', false)
-	})
-	
 	tags: ResourceField<string[]> = new ResourceField<string[]>({
 		saveable: true,
 		editType: new FormField_Tags('资源标签', false)
@@ -98,6 +93,8 @@ export class Other extends BaseResources {
 			resourceType: this.resourceType.value || this.resourceType.defaultValue || 'other',
 			name: this.name.value || '',
 			description: this.description.value || '',
+			sourceInfo: this.sourceInfo.value || '',
+			publishDate: this.publishDate.value || '',
 			category: this.category.value || '',
 			tags: Array.isArray(this.tags.value) ? [...this.tags.value] : [],
 			resourcePath: this.resourcePath.value || '',
