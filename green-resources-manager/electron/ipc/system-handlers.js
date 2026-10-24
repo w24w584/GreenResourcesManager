@@ -26,6 +26,55 @@ const { spawn } = require('child_process')
 const { Notification } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const { extractPeIconBuffer } = require('../utils/pe-icon-extractor')
+
+function convertIcoToPngBuffer(icoBuffer) {
+  return new Promise((resolve) => {
+    const script = `
+      $ErrorActionPreference = 'Stop'
+      Add-Type -AssemblyName System.Drawing
+      Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @'
+      using System.Drawing;
+      using System.Drawing.Imaging;
+      using System.IO;
+      public static class IcoToPng {
+        public static string Convert(string base64) {
+          byte[] bytes = System.Convert.FromBase64String(base64);
+          using (MemoryStream input = new MemoryStream(bytes))
+          using (Icon icon = new Icon(input))
+          using (Bitmap bitmap = icon.ToBitmap())
+          using (MemoryStream output = new MemoryStream()) {
+            bitmap.Save(output, ImageFormat.Png);
+            return System.Convert.ToBase64String(output.ToArray());
+          }
+        }
+      }
+'@
+      [IcoToPng]::Convert($env:EXE_ICON_DATA)
+    `
+    const converter = spawn('powershell', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      script
+    ], { env: { ...process.env, EXE_ICON_DATA: icoBuffer.toString('base64') } })
+    const timeout = setTimeout(() => {
+      if (!converter.killed) converter.kill()
+      resolve(null)
+    }, 15000)
+    let output = ''
+    converter.stdout.on('data', (data) => { output += data.toString() })
+    converter.on('close', (code) => {
+      clearTimeout(timeout)
+      const base64 = output.trim()
+      resolve(code === 0 && base64 ? Buffer.from(base64, 'base64') : null)
+    })
+    converter.on('error', () => {
+      clearTimeout(timeout)
+      resolve(null)
+    })
+  })
+}
 
 /**
  * 注册与系统信息相关的 IPC 处理器。
@@ -1222,7 +1271,6 @@ $results | ConvertTo-Json -Depth 10
       }
 
       const { nativeImage } = require('electron')
-      const fs = require('fs')
 
       // 检查文件是否存在
       if (!fs.existsSync(filePath)) {
@@ -1233,6 +1281,25 @@ $results | ConvertTo-Json -Depth 10
       const ext = path.extname(filePath).toLowerCase()
       if (ext !== '.exe' && ext !== '.lnk') {
         return { success: false, error: '仅支持 .exe 和 .lnk 文件' }
+      }
+
+      if (ext === '.exe') {
+        try {
+          let embeddedIconBuffer = extractPeIconBuffer(fs.readFileSync(filePath))
+          if (embeddedIconBuffer) {
+            if (embeddedIconBuffer.length >= 4 && embeddedIconBuffer.readUInt32LE(0) === 0x00010000) {
+              embeddedIconBuffer = await convertIcoToPngBuffer(embeddedIconBuffer)
+            }
+          }
+          if (embeddedIconBuffer) {
+            const embeddedIcon = nativeImage.createFromBuffer(embeddedIconBuffer)
+            if (!embeddedIcon.isEmpty()) {
+              return { success: true, icon: embeddedIcon.toDataURL() }
+            }
+          }
+        } catch (resourceError) {
+          console.warn('直接读取 exe 图标资源失败，继续使用系统提取:', resourceError.message)
+        }
       }
 
       // 使用 Electron 的 app.getFileIcon 方法（如果可用）
@@ -1253,33 +1320,66 @@ $results | ConvertTo-Json -Depth 10
 
       // 备用方法：使用 PowerShell 提取图标
       return new Promise((resolve) => {
-        // 转义 PowerShell 字符串中的特殊字符
-        const escapedPath = filePath.replace(/'/g, "''").replace(/\$/g, '`$')
-        
-        const powershell = spawn('powershell', [
-          '-Command',
-          `
-          try {
-            Add-Type -AssemblyName System.Drawing
-            $icon = [System.Drawing.Icon]::ExtractAssociatedIcon('${escapedPath}')
+        const script = `
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.Drawing
+          Add-Type -TypeDefinition @'
+          using System;
+          using System.Drawing;
+          using System.Drawing.Imaging;
+          using System.IO;
+          using System.Runtime.InteropServices;
+          public static class ExeIconExtractor {
+            [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+            private static extern uint ExtractIconEx(string file, int index, [Out] IntPtr[] largeIcons, [Out] IntPtr[] smallIcons, uint count);
+            [DllImport("user32.dll", SetLastError = true)]
+            private static extern bool DestroyIcon(IntPtr icon);
+            public static string ExtractPngBase64(string file) {
+              uint iconCount = ExtractIconEx(file, -1, null, null, 0);
+              for (int index = 0; index < iconCount; index++) {
+                IntPtr[] largeIcons = new IntPtr[1];
+                IntPtr[] smallIcons = new IntPtr[1];
+                if (ExtractIconEx(file, index, largeIcons, smallIcons, 1) == 0) continue;
+                IntPtr iconHandle = largeIcons[0] != IntPtr.Zero ? largeIcons[0] : smallIcons[0];
+                if (iconHandle == IntPtr.Zero) continue;
+                try {
+                  using (Icon icon = Icon.FromHandle(iconHandle))
+                  using (Bitmap bitmap = icon.ToBitmap())
+                  using (MemoryStream stream = new MemoryStream()) {
+                    bitmap.Save(stream, ImageFormat.Png);
+                    return Convert.ToBase64String(stream.ToArray());
+                  }
+                } catch {
+                } finally {
+                  if (largeIcons[0] != IntPtr.Zero) DestroyIcon(largeIcons[0]);
+                  if (smallIcons[0] != IntPtr.Zero && smallIcons[0] != largeIcons[0]) DestroyIcon(smallIcons[0]);
+                }
+              }
+              return "";
+            }
+          }
+'@
+          $base64 = [ExeIconExtractor]::ExtractPngBase64($env:EXE_ICON_PATH)
+          if (-not $base64) {
+            $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($env:EXE_ICON_PATH)
             if ($icon) {
               $bitmap = $icon.ToBitmap()
-              $ms = New-Object System.IO.MemoryStream
-              $bitmap.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
-              $bytes = $ms.ToArray()
-              $base64 = [Convert]::ToBase64String($bytes)
-              Write-Output $base64
-              $icon.Dispose()
+              $stream = New-Object System.IO.MemoryStream
+              $bitmap.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png)
+              $base64 = [Convert]::ToBase64String($stream.ToArray())
+              $stream.Dispose()
               $bitmap.Dispose()
-              $ms.Dispose()
-            } else {
-              Write-Output "ERROR: 无法提取图标"
+              $icon.Dispose()
             }
-          } catch {
-            Write-Output "ERROR: $($_.Exception.Message)"
           }
-          `
-        ])
+          if ($base64) { Write-Output $base64 } else { throw '无法提取可执行文件图标' }
+        `
+        const powershell = spawn('powershell', [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          script
+        ], { env: { ...process.env, EXE_ICON_PATH: filePath } })
         
         // 设置超时（5秒）
         const timeout = setTimeout(() => {
@@ -1287,7 +1387,7 @@ $results | ConvertTo-Json -Depth 10
             powershell.kill()
           }
           resolve({ success: false, error: '提取图标超时' })
-        }, 5000)
+        }, 15000)
 
         let output = ''
         let errorOutput = ''
@@ -1302,7 +1402,7 @@ $results | ConvertTo-Json -Depth 10
 
         powershell.on('close', (code) => {
           clearTimeout(timeout)
-          if (code !== 0 || errorOutput) {
+          if (code !== 0) {
             console.error('提取图标失败:', errorOutput)
             resolve({ success: false, error: errorOutput || '提取图标失败' })
             return

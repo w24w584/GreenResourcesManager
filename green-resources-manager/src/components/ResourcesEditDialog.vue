@@ -726,7 +726,23 @@ export default {
   },
   methods: {
     openAiSearch() {
-      this.aiQuery = ''
+      const findText = (keys: string[]) => {
+        for (const key of keys) {
+          const value = this.formData[key]
+          if (typeof value === 'string' && value.trim()) return value.trim()
+        }
+        return ''
+      }
+      const executablePath = this.getExecutablePathValue().trim()
+      const executableName = executablePath.split(/[\\/]/).pop()?.replace(/\.exe$/i, '').trim() || ''
+      const tags = Array.isArray(this.formData.tags) ? this.formData.tags.filter(Boolean).join(', ') : ''
+      this.aiQuery = [
+        findText(['name', 'title', 'resourceName']),
+        findText(['description', 'summary', 'intro', 'introduction']),
+        findText(['developer', 'author', 'publisher']) ? `开发者：${findText(['developer', 'author', 'publisher'])}` : '',
+        tags ? `已有标签：${tags}` : '',
+        executableName
+      ].filter(Boolean).join('\n\n')
       this.aiError = ''
       this.showAiPreview = false
       this.showAiSearch = true
@@ -840,7 +856,7 @@ export default {
               Array.isArray(field.filters) &&
               field.filters.some((f: any) => 
                 f.extensions && f.extensions.some((ext: string) => 
-                  ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext.toLowerCase())
+                  ['jpg', 'jpeg', 'png', 'gif', 'webp', 'ico'].includes(ext.toLowerCase())
                 )
               ))
     },
@@ -876,6 +892,18 @@ export default {
         }
       }
       return ''
+    },
+    async fillExecutableCover(executablePath: string) {
+      const coverKey = ['coverPath', 'cover', 'thumbnail', 'thumbnailPath'].find((key) =>
+        Object.prototype.hasOwnProperty.call(this.formData, key) && this.formFields[key] && this.isCoverField(this.formFields[key])
+      )
+      if (!coverKey || String(this.formData[coverKey] || '').trim() || !window.electronAPI?.getFileIcon) return
+      try {
+        const iconResult = await window.electronAPI.getFileIcon(executablePath, 64)
+        if (iconResult?.success && iconResult.icon) this.formData[coverKey] = iconResult.icon
+      } catch (error) {
+        console.warn('[ResourcesEditDialog] 提取默认封面图标失败:', error)
+      }
     },
     // 获取文件夹路径的值（用于漫画封面选择等功能）
     getFolderPathValue(): string {
@@ -1145,6 +1173,10 @@ export default {
           }
 
           this.formData[key] = filePath
+
+          if (this.isExecutableFileField(field)) {
+            await this.fillExecutableCover(filePath)
+          }
           
           // 如果是可执行文件字段，自动提取名称（如果名称字段为空）
           if (this.isExecutableFileField(field)) {
@@ -1242,7 +1274,7 @@ export default {
     },
     isImageFile(filePath: string): boolean {
       if (!filePath) return false
-      const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg']
+      const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', '.ico', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'ico']
       const fileExt = this.getFileExtension(filePath).toLowerCase()
       return imageExtensions.includes(fileExt) || imageExtensions.includes(`.${fileExt}`)
     },
@@ -1311,7 +1343,7 @@ export default {
           } else {
             // 封面字段使用图片文件选择
             const coverField = new FormField_SelectFile('封面', [
-              { name: '图片文件', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'] }
+              { name: '图片文件', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'ico'] }
             ])
             await this.handleBrowseFile(key, coverField)
           }
@@ -1773,6 +1805,16 @@ export default {
               resource[key] = BaseResources.extractPrimitiveValue(value)
             }
           }
+        }
+
+        const coverKey = ['coverPath', 'cover', 'thumbnail', 'thumbnailPath'].find(key =>
+          Object.prototype.hasOwnProperty.call(resource, key)
+        )
+        const isGameOrSoftware = ['game', 'software'].includes(String(resource.resourceType || '').toLowerCase())
+        const executablePath = this.getExecutablePathValue().trim()
+        if (isGameOrSoftware && coverKey && !String(resource[coverKey] || '').trim() && executablePath && window.electronAPI?.getFileIcon) {
+          await this.fillExecutableCover(executablePath)
+          if (String(this.formData[coverKey] || '').trim()) resource[coverKey] = this.formData[coverKey]
         }
 
         console.log('[ResourcesEditDialog] 准备触发 confirm 事件，resource:', resource)
