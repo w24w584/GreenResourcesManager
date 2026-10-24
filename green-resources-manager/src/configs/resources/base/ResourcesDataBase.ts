@@ -32,6 +32,13 @@ export interface ResourceDisplayTexts {
  * 子类必须实现或重写这些抽象属性
  */
 export abstract class BaseResources {
+
+	/**
+	 * 只给界面用的临时字段，不能写进存档。
+	 * 番剧详情会把文件夹里扫出来的视频列表放在 folderVideos 上。
+	 * 这些对象是 Vue 的响应式代理，交给数据库进程时无法克隆，保存会报 An object could not be cloned。
+	 */
+	static readonly ephemeralFieldKeys = new Set<string>(['folderVideos'])
 	
 	/**
 	 * 静态方法：获取显示文本配置
@@ -102,6 +109,15 @@ export abstract class BaseResources {
 	fileExists: ResourceField<boolean> = new ResourceField<boolean>({
 		saveable: false
 	})
+
+	/**
+	 * 内容指纹。
+	 * 不展示在编辑框里。用来在改名或移动之后认出还是不是原来那一条资源。
+	 */
+	fingerprint: ResourceField<string> = new ResourceField<string>({
+		saveable: true,
+		defaultValue: ''
+	})
 	
 	/**
 	 * 添加日期
@@ -148,6 +164,29 @@ export abstract class BaseResources {
 	isFavorite: ResourceField<boolean> = new ResourceField<boolean>({
 		saveable: true
 	})
+
+	/**
+	 * 是否已经玩完、看完或读完。
+	 * 放在基类上，是因为每种资源的详情页都有同一块玩家评价，完成标记要跟着这条资源一起保存。
+	 */
+	finished: ResourceField<boolean> = new ResourceField<boolean>({
+		saveable: true,
+		defaultValue: false
+	})
+
+	/**
+	 * 标记完成的时间。取消标记后清空，避免日期还留在未完成的资源上。
+	 */
+	finishedAt: ResourceField<string> = new ResourceField<string>({
+		saveable: true,
+		defaultValue: ''
+	})
+
+	/**
+	 * 当前这个类没有声明、但记录里已经写下的字段。
+	 * 页面可以给同一条资源写入别的页的字段。这些值留在这里，换页保存时和类自己的字段一起写回，不会被清掉。
+	 */
+	retainedFields: Record<string, any> = {}
 	
 
 	/**
@@ -256,6 +295,63 @@ export abstract class BaseResources {
 	}
 
 	/**
+	 * 把类自己的存档和页面后来写入的字段合成一条记录。
+	 * 类字段放在后面，所以引擎、时长这类已有值以类里的为准。类没有的键从 retainedFields 留下，换页才不会丢。
+	 * @param instance 资源实例
+	 * @param declared 这个类 getSaveData 返回的字段
+	 */
+	static composeSaveData(instance: BaseResources, declared: any): any {
+		const merged: Record<string, any> = {}
+		const retained = instance?.retainedFields
+		if (retained && typeof retained === 'object') {
+			for (const key of Object.keys(retained)) {
+				if (key === 'retainedFields') continue
+				merged[key] = retained[key]
+			}
+		}
+		if (declared && typeof declared === 'object') {
+			for (const key of Object.keys(declared)) {
+				merged[key] = declared[key]
+			}
+		}
+		delete merged.retainedFields
+		for (const key of BaseResources.ephemeralFieldKeys) {
+			delete merged[key]
+		}
+		return merged
+	}
+
+	/**
+	 * 把编辑结果写回一条资源。
+	 * 类上有的字段改它的 value。类上没有的字段放进 retainedFields，并挂到实例上，筛选和详情才能读到。
+	 * 不碰 retainedFields 这个袋子本身，避免把整袋嵌套进存档。
+	 * @param item 已经在列表里的资源实例
+	 * @param key 字段键
+	 * @param raw 编辑框交回来的值
+	 */
+	static assignSavedValue(item: any, key: string, raw: any): void {
+		if (!item || !key || key === 'retainedFields') return
+		if (BaseResources.ephemeralFieldKeys.has(key)) {
+			if (item.retainedFields && Object.prototype.hasOwnProperty.call(item.retainedFields, key)) {
+				delete item.retainedFields[key]
+			}
+			return
+		}
+		const value = BaseResources.extractPrimitiveValue(raw)
+		const field = item[key]
+		if (field instanceof ResourceField) {
+			field.value = value
+			if (item.retainedFields && Object.prototype.hasOwnProperty.call(item.retainedFields, key)) {
+				delete item.retainedFields[key]
+			}
+			return
+		}
+		if (!item.retainedFields || typeof item.retainedFields !== 'object') item.retainedFields = {}
+		item.retainedFields[key] = value
+		item[key] = value
+	}
+
+	/**
 	 * 从资源实例中提取可保存的数据
 	 * @param instance - 资源类实例（Game、Novel、Audio 等）
 	 * @returns 只包含可保存字段的普通对象
@@ -300,12 +396,6 @@ export abstract class BaseResources {
 		jsonData: any
 	): T {
 		const instance = new this()
-		
-		console.log('[BaseResources.fromJSON] 开始解析:', {
-			jsonData,
-			jsonDataKeys: Object.keys(jsonData || {})
-		})
-		
 		// 遍历实例的所有属性，将 JSON 数据赋值给 ResourceField.value
 		for (const key in instance) {
 			const field = (instance as any)[key]
@@ -334,6 +424,18 @@ export abstract class BaseResources {
 				}
 			}
 		}
+
+		// 类上没有的键也要留下。音声页写入的声优，回到游戏页时游戏类不认识它，但不能从记录里丢掉。
+		const retained: Record<string, any> = {}
+		for (const key of Object.keys(jsonData || {})) {
+			if (key === 'retainedFields' || BaseResources.ephemeralFieldKeys.has(key)) continue
+			const current = (instance as any)[key]
+			if (current instanceof ResourceField || typeof current === 'function') continue
+			const value = BaseResources.extractPrimitiveValue(jsonData[key])
+			retained[key] = value
+			;(instance as any)[key] = value
+		}
+		instance.retainedFields = retained
 		
 		return instance
 	}

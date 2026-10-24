@@ -23,8 +23,7 @@ export class Software extends BaseResources {
 		'.app',  // macOS 应用
 		'.apk',  // Android 应用
 		'.bat',  // 批处理文件
-		'.sh',   // Shell 脚本
-		'.zip', '.rar', '.7z', '.tar', '.gz', '.tar.gz', '.bz2', '.tar.bz2', '.xz', '.tar.xz'  // 压缩包
+		'.sh'    // Shell 脚本
 	]
 	
 	resourceType: ResourceField<string> = new ResourceField<string>({
@@ -116,6 +115,7 @@ export class Software extends BaseResources {
 		getSaveData(): any {
 		return {
 			id: this.id.value || this.id.defaultValue || '',
+			fingerprint: this.fingerprint.value || '',
 			resourceType: this.resourceType.value || this.resourceType.defaultValue || 'software',
 			name: this.name.value || '',
 			nickname: this.nickname.value || '',
@@ -134,7 +134,9 @@ export class Software extends BaseResources {
 			addedDate: this.addedDate.value || '',
 			rating: this.rating.value || 0,
 			comment: this.comment.value || '',
-			isFavorite: this.isFavorite.value || false
+			isFavorite: this.isFavorite.value || false,
+			finished: this.finished.value === true,
+			finishedAt: this.finished.value === true ? (this.finishedAt.value || '') : ''
 		}
 	}
 

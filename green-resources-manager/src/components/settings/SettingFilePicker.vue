@@ -1,20 +1,20 @@
 <template>
   <div class="setting-item">
     <label class="setting-label">
-      <span class="setting-title">{{ title }}</span>
-      <span class="setting-desc" v-if="description">{{ description }}</span>
+      <span class="setting-title">{{ $lt(title) }}</span>
+      <span class="setting-desc" v-if="description">{{ $lt(description) }}</span>
     </label>
     <div class="setting-control">
       <div class="file-input-group">
         <input 
           type="text" 
           :value="modelValue"
-          :placeholder="placeholder"
+          :placeholder="$lt(placeholder)"
           class="setting-input"
           readonly
         >
         <button class="btn-browse" @click="handleBrowse">
-          {{ browseButtonText }}
+          {{ $lt(browseButtonText) }}
         </button>
       </div>
     </div>
@@ -207,7 +207,7 @@ export default {
 .btn-browse {
   padding: 8px 16px;
   background: var(--accent-color);
-  color: white;
+  color: var(--text-on-accent, #1a1a1a);
   border: none;
   border-radius: 6px;
   cursor: pointer;

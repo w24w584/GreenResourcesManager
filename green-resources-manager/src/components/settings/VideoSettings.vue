@@ -2,8 +2,8 @@
   <div class="settings-section">
     <div class="settings-grid">
       <SettingSelect
-        title="视频播放方式"
-        description="选择视频的播放方式"
+        :title="$lt('视频播放方式')"
+        :description="$lt('选择视频的播放方式')"
         :model-value="settings.videoPlayMode"
         :options="videoPlayModeOptions"
         @update:model-value="updateSetting('videoPlayMode', $event)"
@@ -33,7 +33,7 @@ export default {
     return {
       videoPlayModeOptions: [
         { value: 'external', label: '使用外部默认播放器' },
-        { value: 'internal', label: '在本应用新窗口中播放' }
+        { value: 'internal', label: '在本应用新标签页中播放' }
       ]
     }
   },

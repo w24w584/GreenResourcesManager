@@ -14,8 +14,14 @@
           </button>
         </div>
         <!-- 调试信息：如果 resourceClass 不可用，显示警告 -->
+        <div v-if="mode === 'add' && typeChoices.length > 1" class="form-field-wrapper">
+          <label class="form-label">{{ $lt('这种文件是') }}</label>
+          <select class="type-choice" :value="selectedType" @change="onTypeChoiceChange">
+            <option v-for="choice in typeChoices" :key="choice.id" :value="choice.id">{{ $lt(choice.label) }}</option>
+          </select>
+        </div>
         <div v-if="!resourceClass || typeof resourceClass !== 'function'" class="form-error-message">
-          <p>⚠️ 资源类未正确加载，请检查 resourceClass prop 是否正确传递</p>
+          <p>{{ $lt('⚠️ 资源类未正确加载，请检查 resourceClass prop 是否正确传递') }}</p>
           <p>resourceClass: {{ resourceClass }}</p>
         </div>
         <!-- 根据资源类自动生成表单字段 -->
@@ -54,6 +60,14 @@
             type="number"
             :placeholder="getFieldPlaceholder(key, field)"
           />
+
+          <!-- 日期字段。发行日期用系统日期选择，存成 YYYY-MM-DD，和侧栏筛选项一致 -->
+          <fun-input
+            v-else-if="field instanceof FormField_Date"
+            :id="key"
+            v-model="formData[key]"
+            type="date"
+          />
           
           <!-- 选择字段（引擎类型，自带检测引擎按钮） -->
           <template v-else-if="field instanceof FormField_SelectEngine">
@@ -82,9 +96,7 @@
                 :disabled="!getExecutablePathValue() || !isElectronEnvironment"
                 :title="!getExecutablePathValue() ? '请先选择游戏文件' : (isElectronEnvironment ? '根据游戏路径自动识别引擎' : '仅 Electron 环境支持')"
               >
-                <span class="btn-icon">🔍</span>
-                检测引擎
-              </button>
+                <span class="btn-icon">🔍</span> {{ $lt('检测引擎') }} </button>
             </div>
           </template>
           
@@ -121,7 +133,7 @@
               :id="key"
               v-model="formData[key]"
             />
-            <span class="checkbox-text">{{ field.fieldName }}</span>
+            <span class="checkbox-text">{{ $lt(field.fieldName) }}</span>
           </label>
           
           <!-- 单图片文件选择（仅预览 +「选择图片」） -->
@@ -135,9 +147,7 @@
               </div>
               <div class="cover-actions">
                 <button type="button" class="btn-cover-action" @click="() => handleBrowseFile(key, field)">
-                  <span class="btn-icon">📁</span>
-                  选择图片
-                </button>
+                  <span class="btn-icon">📁</span> {{ $lt('选择图片') }} </button>
               </div>
             </div>
           </template>
@@ -160,9 +170,7 @@
                   @click="() => handleUseScreenshotAsCover(key)"
                   :disabled="isEditMode ? false : !getExecutablePathValue()"
                 >
-                  <span class="btn-icon">📸</span>
-                  使用截图作为封面
-                </button>
+                  <span class="btn-icon">📸</span> {{ $lt('使用截图作为封面') }} </button>
                 <!-- 游戏封面：选择第一张封面（自带） -->
                 <button 
                   v-if="field instanceof FormField_SelectGameCover"
@@ -170,11 +178,19 @@
                   class="btn-cover-action" 
                   @click="() => handleUseFirstImageAsGameCover(key)"
                   :disabled="!canGetGameScreenshotFolderPath"
-                  title="使用该游戏截图文件夹内第一张图片作为封面"
+                  :title="$lt('使用该游戏截图文件夹内第一张图片作为封面')"
                 >
-                  <span class="btn-icon">🖼️</span>
-                  选择第一张封面
-                </button>
+                  <span class="btn-icon">🖼️</span> {{ $lt('选择第一张封面') }} </button>
+                <!-- 游戏和软件：用程序自带图标当封面 -->
+                <button
+                  v-if="field instanceof FormField_SelectGameCover"
+                  type="button"
+                  class="btn-cover-action"
+                  @click="() => handleUseAppIconAsCover(key)"
+                  :disabled="!canUseAppIconCover || appIconCoverLoading"
+                  :title="$lt('读取这个程序自带的图标，设为封面')"
+                >
+                  <span class="btn-icon">🧩</span> {{ $lt(appIconCoverLoading ? '正在读取图标' : '使用应用图标作为封面') }} </button>
                 <!-- 漫画封面：使用第一张图片（自带） -->
                 <button 
                   v-if="field instanceof FormField_SelectMangaCover"
@@ -182,11 +198,9 @@
                   class="btn-cover-action" 
                   @click="() => handleUseFirstImageAsCover(key)"
                   :disabled="!getFolderPathValue()"
-                  title="使用漫画文件夹内第一张图片作为封面"
+                  :title="$lt('使用漫画文件夹内第一张图片作为封面')"
                 >
-                  <span class="btn-icon">🖼️</span>
-                  使用第一张图片
-                </button>
+                  <span class="btn-icon">🖼️</span> {{ $lt('使用第一张图片') }} </button>
                 <!-- 漫画封面：从文件夹选择（自带） -->
                 <button 
                   v-if="field instanceof FormField_SelectMangaCover"
@@ -194,11 +208,9 @@
                   class="btn-cover-action" 
                   @click="() => handleSelectFromFolder(key)"
                   :disabled="!getFolderPathValue()"
-                  title="从文件夹中挑选一张图片作为封面"
+                  :title="$lt('从文件夹中挑选一张图片作为封面')"
                 >
-                  <span class="btn-icon">📂</span>
-                  从文件夹选择
-                </button>
+                  <span class="btn-icon">📂</span> {{ $lt('从文件夹选择') }} </button>
                 <!-- 视频缩略图：随机封面 -->
                 <button 
                   v-if="field instanceof FormField_SelectVideoThumbnail && enableRandomizeThumbnail"
@@ -207,9 +219,7 @@
                   @click="() => handleRandomizeThumbnail(key)"
                   :disabled="!getFilePathValue()"
                 >
-                  <span class="btn-icon">🎲</span>
-                  随机封面
-                </button>
+                  <span class="btn-icon">🎲</span> {{ $lt('随机封面') }} </button>
                 <!-- 视频缩略图：从封面文件夹选择（用于文件夹） -->
                 <button 
                   v-if="field instanceof FormField_SelectVideoThumbnail && enableSelectFromFolderCovers"
@@ -218,13 +228,9 @@
                   @click="() => handleSelectFromFolderCovers(key)"
                   :disabled="!getFolderPathValue()"
                 >
-                  <span class="btn-icon">📂</span>
-                  从封面文件夹选择
-                </button>
+                  <span class="btn-icon">📂</span> {{ $lt('从封面文件夹选择') }} </button>
                 <button type="button" class="btn-cover-action" @click="() => handleBrowseImage(key)">
-                  <span class="btn-icon">📁</span>
-                  选择自定义封面
-                </button>
+                  <span class="btn-icon">📁</span> {{ $lt('选择自定义封面') }} </button>
                 <button 
                   type="button" 
                   class="btn-cover-action btn-clear" 
@@ -232,9 +238,7 @@
                   :disabled="!formData[key]"
                   :title="formData[key] ? '清除当前封面' : '当前无封面'"
                 >
-                  <span class="btn-icon">🗑️</span>
-                  清除封面
-                </button>
+                  <span class="btn-icon">🗑️</span> {{ $lt('清除封面') }} </button>
               </div>
             </div>
           </template>
@@ -253,9 +257,7 @@
               class="btn-browse" 
               @click="() => handleBrowseFolder(key, field)"
               :disabled="!isElectronEnvironment"
-            >
-              浏览
-            </button>
+            > {{ $lt('浏览') }} </button>
           </div>
           
           <!-- 文件选择字段（普通文件） -->
@@ -272,12 +274,10 @@
               class="btn-browse" 
               @click="() => handleBrowseFile(key, field)"
               :disabled="!isElectronEnvironment"
-            >
-              浏览
-            </button>
+            > {{ $lt('浏览') }} </button>
             <!-- 图片预览 -->
             <div v-if="isImageFile(formData[key]) && formData[key]" class="image-preview">
-              <img :src="getImageUrl(formData[key])" :alt="field.fieldName" @error="handleImageError" />
+              <img :src="getImageUrl(formData[key])" :alt="$lt(field.fieldName)" @error="handleImageError" />
             </div>
           </div>
         </div>
@@ -286,7 +286,7 @@
         <slot name="extra-fields" :formData="formData" :isEditMode="isEditMode"></slot>
       </div>
       <div class="modal-footer">
-        <button class="btn-cancel" @click="handleClose">取消</button>
+        <button class="btn-cancel" @click="handleClose">{{ $lt('取消') }}</button>
         <button class="btn-confirm" @click="() => { console.log('[ResourcesEditDialog] 确认按钮被点击，canConfirm:', canConfirm); handleConfirm() }" :disabled="!canConfirm">
           {{ getConfirmButtonText() }}
         </button>
@@ -347,9 +347,13 @@
 </template>
 
 <script lang="ts">
-import {computed, nextTick, PropType} from 'vue'
+// setup 里用 computed 抽表单字段，watch 里用 nextTick 等 props 到位。
+// 这两个 API 必须从 vue 显式导入，漏导入会让对话框 setup 直接抛错，路由视图随后更新时读到空节点。
+import { computed, nextTick } from 'vue'
+import { lf, lt } from '../locales/lt'
 import TagSelectionPanel from './TagSelectionPanel.vue'
 import saveManager from '../utils/SaveManager.ts'
+import coverManager from '../utils/CoverManager.ts'
 import notify from '../utils/NotificationService.ts'
 import alertService from '../utils/AlertService.ts'
 import {detectGameEngine} from '../utils/GameEngineDetector.ts'
@@ -367,10 +371,13 @@ import {
   FormField_SelectVideoThumbnail,
   FormField_Tags,
   FormField_Text,
-  FormField_Textarea
+  FormField_Textarea,
+  FormField_Date
 } from '@resources/base/FormField.ts'
 import {ResourceField} from '@resources/base/ResourceField.ts'
 import {BaseResources} from '@resources/base/ResourcesDataBase.ts'
+import { resolvePageEditType } from '@resources/resourceKindCatalog.ts'
+import { defaultValueForEditor, type PageFieldDef } from '../configs/pages/pageFieldSchema.ts'
 import {FunInput, FunSelect, FunTagInput, FunTextarea} from "../fun-ui";
 import FunOption from "../fun-ui/data-input/Select/FunOption.vue";
 import FunSelectSlot from "../fun-ui/data-input/Select/FunSelectSlot.vue";
@@ -401,6 +408,29 @@ export default {
       type: Function,
       required: true
     } as any,
+    /** 页面接受的资源种类。多于一种时，添加窗口让用户选 */
+    typeChoices: {
+      type: Array,
+      default: () => []
+    },
+    /** 当前选中的基本资源类型 */
+    selectedType: {
+      type: String,
+      default: ''
+    },
+    /** 页面勾选的字段。不传则显示资源类上的全部编辑字段 */
+    enabledFieldKeys: {
+      type: Array as PropType<string[] | null>,
+      default: null
+    },
+    /**
+     * 这一页自己的字段定义。
+     * 资源类上没有的字段也要能编辑，名字和编辑框以页面为准。
+     */
+    pageFieldDefs: {
+      type: Array as PropType<PageFieldDef[]>,
+      default: () => []
+    },
     // 资源数据（编辑模式）
     resourceData: {
       type: Object,
@@ -481,7 +511,7 @@ export default {
       default: null
     }
   },
-  emits: ['close', 'confirm', 'use-first-image-cover', 'select-from-folder-cover', 'select-from-folder-covers', 'randomize-thumbnail', 'video-file-selected'],
+  emits: ['close', 'confirm', 'use-first-image-cover', 'select-from-folder-cover', 'select-from-folder-covers', 'randomize-thumbnail', 'video-file-selected', 'change-type'],
   setup(props) {
     // 提取所有 FormField 类型的字段，保持类中定义的顺序
     // 支持两种形式：直接使用 FormField 或使用 ResourceField（从 editType 中提取）
@@ -502,16 +532,23 @@ export default {
       }
       
       const fields: Record<string, FormFieldType> = {}
+      const pageKeys = Array.isArray(props.enabledFieldKeys) ? props.enabledFieldKeys : null
+      const defs = Array.isArray(props.pageFieldDefs) ? props.pageFieldDefs : []
+      // 页面规定了字段时，按页面的顺序画。类上没有的字段也要出现，否则音声页加的声优在游戏类上永远编辑不了。
+      if (pageKeys) {
+        for (const key of pageKeys) {
+          const def = defs.find(item => item.key === key)
+          const edit = resolvePageEditType(key, resourceInstance, def)
+          if (edit) fields[key] = edit
+        }
+        return fields
+      }
       // 遍历资源实例的所有属性，保持定义顺序
       for (const key in resourceInstance) {
         const value = (resourceInstance as any)[key]
         if (value instanceof ResourceField) {
-          // 如果是 ResourceField，使用其 editType（只有当 editType 不为 null 时才添加）
-          if (value.editType) {
-            fields[key] = value.editType
-          }
+          if (value.editType) fields[key] = value.editType
         } else if (value instanceof FormFieldType) {
-          // 如果是 FormField，直接使用
           fields[key] = value
         }
       }
@@ -522,6 +559,7 @@ export default {
       formFields,
       FormField_Text,
       FormField_Textarea,
+      FormField_Date,
       FormField_Number,
       FormField_Select,
       FormField_Tags,
@@ -581,13 +619,19 @@ export default {
           }
         }
       }
+      // 页面新加的字段不在资源类上，这里补上空值，编辑框才有地方写。
+      const defs = Array.isArray(this.pageFieldDefs) ? this.pageFieldDefs : []
+      for (const def of defs) {
+        if (!def?.key || def.key in data) continue
+        data[def.key] = defaultValueForEditor(def.editor)
+      }
       return data
     }
     
     return {
       formData: initFormData(),
       initFormData,
-      tagInputRefs: {} as Record<string, any>,
+      tagInputRefs: {} as Record<string, any>,,
       showAiSearch: false,
       showAiPreview: false,
       aiQuery: '',
@@ -604,6 +648,15 @@ export default {
         source: '',
         publishDate: ''
       }
+      /**
+       * 已经读成 data URL 的封面预览。
+       * 键是表单里的原始路径。相对路径不能直接当图片地址，读完再写进来，预览才会刷新。
+       */
+      coverPreviewUrls: {} as Record<string, string>,
+      /** 正在读取的封面路径，避免每次渲染都再读一遍文件。 */
+      coverPreviewLoading: {} as Record<string, boolean>,
+      /** 正在把程序图标写入封面字段。避免连点重复提取。 */
+      appIconCoverLoading: false
     }
   },
   computed: {
@@ -627,17 +680,8 @@ export default {
       const resourceInstance = this.createResourceInstance()
       if (!resourceInstance) return false
       
-      for (const key in resourceInstance) {
-        const value = (resourceInstance as any)[key]
-        let field: FormFieldType | null = null
-        
-        // 支持 ResourceField 和 FormField 两种形式
-        if (value instanceof ResourceField) {
-          field = value.editType
-        } else if (value instanceof FormFieldType) {
-          field = value
-        }
-        
+      for (const key in this.formFields) {
+        const field = this.formFields[key]
         if (field && field.required) {
           const formValue = this.formData[key]
           if (!formValue || (typeof formValue === 'string' && formValue.trim() === '') || 
@@ -678,6 +722,12 @@ export default {
       const hasPath = this.getExecutablePathValue().trim() !== ''
       if (this.isEditMode) return hasName && !!this.formData.id
       return hasName || hasPath
+    },
+    /**
+     * 当前选中的程序是 exe 或快捷方式时，才能用它的图标当封面。
+     */
+    canUseAppIconCover(): boolean {
+      return /\.(exe|lnk)$/i.test(this.getExecutablePathValue().trim())
     }
   },
   watch: {
@@ -698,6 +748,11 @@ export default {
             this.resetForm()
           }
         })
+      }
+    },
+    resourceClass() {
+      if (this.visible && !this.isEditMode) {
+        this.$nextTick(() => this.resetForm())
       }
     },
     resourceData: {
@@ -725,6 +780,13 @@ export default {
     }
   },
   methods: {
+    /**
+     * 添加时切换资源种类。字段会跟着新的资源类重画，已填内容不保留。
+     */
+    onTypeChoiceChange(event: Event) {
+      const value = (event.target as HTMLSelectElement).value
+      this.$emit('change-type', value)
+    },
     openAiSearch() {
       const findText = (keys: string[]) => {
         for (const key of keys) {
@@ -838,13 +900,13 @@ export default {
     getTitle() {
       const config = (this.resourceClass as any)?.editDialogConfig
       if (this.isEditMode) {
-        return config?.editTitle || '编辑资源'
+        return lt(config?.editTitle || '编辑资源')
       }
-      return config?.addTitle || '添加资源'
+      return lt(config?.addTitle || '添加资源')
     },
     getConfirmButtonText() {
-      if (this.confirmButtonText) return this.confirmButtonText
-      return this.isEditMode ? this.editButtonText : this.addButtonText
+      if (this.confirmButtonText) return lt(this.confirmButtonText)
+      return lt(this.isEditMode ? this.editButtonText : this.addButtonText)
     },
     // 判断是否是封面字段
     isCoverField(field: FormFieldType): boolean {
@@ -856,7 +918,7 @@ export default {
               Array.isArray(field.filters) &&
               field.filters.some((f: any) => 
                 f.extensions && f.extensions.some((ext: string) => 
-                  ['jpg', 'jpeg', 'png', 'gif', 'webp', 'ico'].includes(ext.toLowerCase())
+                  ['jpg', 'jpeg', 'jpe', 'jfif', 'png', 'gif', 'webp', 'ico'].includes(ext.toLowerCase())
                 )
               ))
     },
@@ -952,19 +1014,12 @@ export default {
     },
     // 获取所有 FormField_Tags 字段（用于 TagSelectionPanel 多区块展示）
     getTagsFields(): { key: string; label: string }[] {
-      const resourceInstance = this.createResourceInstance()
-      if (!resourceInstance) return []
       const list: { key: string; label: string }[] = []
-      for (const key in resourceInstance) {
-        const value = (resourceInstance as any)[key]
-        let field: FormFieldType | null = null
-        if (value instanceof ResourceField) {
-          field = value.editType
-        } else if (value instanceof FormFieldType) {
-          field = value
-        }
+      const fields = this.formFields || {}
+      for (const key in fields) {
+        const field = fields[key]
         if (field instanceof FormField_Tags) {
-          list.push({ key, label: field.fieldName })
+          list.push({ key, label: lt(field.fieldName) })
         }
       }
       return list
@@ -974,7 +1029,7 @@ export default {
       if (!field) {
         return key
       }
-      const fieldName = field.fieldName
+      const fieldName = lt(field.fieldName)
       const isRequired = field.required === true
       
       return isRequired ? `${fieldName} *` : fieldName
@@ -982,18 +1037,18 @@ export default {
     // 获取字段占位符
     getFieldPlaceholder(key: string, field: FormFieldType): string {
       if (field instanceof FormField_Select) {
-        return `请选择${field.fieldName}`
+        return lf('请选择{name}', { name: lt(field.fieldName) })
       }
       if (field instanceof FormField_Textarea) {
-        return '输入简介或描述...'
+        return lt('输入简介或描述...')
       }
       if (field instanceof FormField_SelectFile) {
-        return `选择${field.fieldName}`
+        return lf('选择{name}', { name: lt(field.fieldName) })
       }
       if (field instanceof FormField_SelectFolder) {
-        return `选择${field.fieldName}`
+        return lf('选择{name}', { name: lt(field.fieldName) })
       }
-      return `请输入${field.fieldName}`
+      return lf('请输入{name}', { name: lt(field.fieldName) })
     },
     // 获取选择字段的选项（用于 SELECT 类型）
     getSelectOptions(key: string, field: FormFieldType): Array<{ value: string; label: string; icon: string | null }> {
@@ -1105,9 +1160,34 @@ export default {
         }
       }
       
+      // 页面字段可能不在当前资源类上。类的循环读不到时，从记录或 retainedFields 里补上。
+      const defs = Array.isArray(this.pageFieldDefs) ? this.pageFieldDefs : []
+      for (const def of defs) {
+        if (!def?.key) continue
+        let resourceValue = (this.resourceData as any)[def.key]
+        if ((resourceValue === undefined || resourceValue === null) && (this.resourceData as any).retainedFields) {
+          resourceValue = (this.resourceData as any).retainedFields[def.key]
+        }
+        if (resourceValue instanceof ResourceField) resourceValue = resourceValue.value
+        if (resourceValue === undefined || resourceValue === null) continue
+        const field = this.formFields?.[def.key]
+        if (field instanceof FormField_Tags) {
+          initData[def.key] = Array.isArray(resourceValue)
+            ? [...resourceValue]
+            : (typeof resourceValue === 'string' && resourceValue.trim() !== '' ? [resourceValue] : [])
+        } else if (field instanceof FormField_Checkbox) {
+          initData[def.key] = Boolean(resourceValue)
+        } else if (field instanceof FormField_Number) {
+          initData[def.key] = typeof resourceValue === 'number' ? resourceValue : Number(resourceValue) || 0
+        } else if (typeof resourceValue === 'string' || typeof resourceValue === 'number' || typeof resourceValue === 'boolean' || Array.isArray(resourceValue)) {
+          initData[def.key] = Array.isArray(resourceValue) ? [...resourceValue] : resourceValue
+        }
+      }
+
       // 然后保留其他不在类中定义但在 resourceData 中的字段（如 duration）
       // 这些字段不会显示在表单中，但会在确认时保留
       for (const key in this.resourceData) {
+        if (key === 'retainedFields' || BaseResources.ephemeralFieldKeys.has(key)) continue
         if (!(key in initData) && key !== 'id' && key !== 'fileExists') {
           let value = (this.resourceData as any)[key]
           // 如果值是 ResourceField 对象，提取其 value
@@ -1145,7 +1225,7 @@ export default {
           return
         }
 
-        const filePath = await electronAPI.selectFileWithExtensions(filters, null, `选择${field.fieldName}`)
+        const filePath = await electronAPI.selectFileWithExtensions(filters, null, lf('选择{name}', { name: lt(field.fieldName) }))
 
         if (filePath) {
           if (filters && filters.length > 0) {
@@ -1274,7 +1354,7 @@ export default {
     },
     isImageFile(filePath: string): boolean {
       if (!filePath) return false
-      const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', '.ico', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'ico']
+      const imageExtensions = ['.jpg', '.jpeg', '.jpe', '.jfif', '.png', '.gif', '.bmp', '.webp', '.svg', '.ico', 'jpg', 'jpeg', 'jpe', 'jfif', 'png', 'gif', 'bmp', 'webp', 'svg', 'ico']
       const fileExt = this.getFileExtension(filePath).toLowerCase()
       return imageExtensions.includes(fileExt) || imageExtensions.includes(`.${fileExt}`)
     },
@@ -1284,18 +1364,69 @@ export default {
       const fileExt = this.getFileExtension(filePath).toLowerCase()
       return videoExtensions.includes(fileExt) || videoExtensions.includes(`.${fileExt}`)
     },
+    /**
+     * 封面还没读出来时用的小占位图。
+     * 用 data URL，这样不会去请求一个不存在的文件，也就不会误触发加载失败。
+     * @returns {string}
+     */
+    coverPlaceholderSrc(): string {
+      return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjI4MCIgdmlld0JveD0iMCAwIDIwMCAyODAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjgwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMDAgMTIwSDgwVjE2MEgxMjBWMTIwWiIgZmlsbD0iIzlDQTNBRiIvPgo8cGF0aCBkPSJNODAgMTIwTDEwMCAxMDBMMTIwIDEyMEwxMDAgMTQwTDgwIDEyMFoiIGZpbGw9IiM5Q0EzQUYiLz4KPC9zdmc+'
+    },
+    /**
+     * 编辑框里的封面预览地址。
+     * 电影封面常常是 videos/covers 这种相对路径。直接拼 file:// 会指到网页目录，图片加载失败就变成房子占位图。
+     * 先把路径拼到存档目录，读成 data URL，再交给 img。
+     * @param filePath 表单里的封面路径
+     * @returns {string}
+     */
     getImageUrl(filePath: string): string {
       if (!filePath || (typeof filePath === 'string' && filePath.trim() === '')) {
-        return '/default-game.png'
+        return this.coverPlaceholderSrc()
       }
-      if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+      if (filePath.startsWith('http://') || filePath.startsWith('https://') || filePath.startsWith('data:') || filePath.startsWith('blob:') || filePath.startsWith('archive:')) {
         return filePath
       }
-      if (filePath.startsWith('data:') || filePath.startsWith('file:')) {
-        return filePath
+      const cached = this.coverPreviewUrls[filePath]
+      if (cached) return cached
+      this.loadCoverPreview(filePath)
+      return this.coverPlaceholderSrc()
+    },
+    /**
+     * 把封面文件读进预览缓存。
+     * 相对路径先交给封面管理器拼到存档目录。拼完仍读不到时，再试原始路径。
+     * @param filePath 表单里的封面路径
+     */
+    loadCoverPreview(filePath: string) {
+      if (!filePath || this.coverPreviewUrls[filePath] || this.coverPreviewLoading[filePath]) return
+      this.coverPreviewLoading[filePath] = true
+      this.resolveCoverPreview(filePath)
+    },
+    /**
+     * 异步读取封面。读成功后写入缓存，预览图会跟着换成真正的封面。
+     * @param filePath 表单里的封面路径
+     */
+    async resolveCoverPreview(filePath: string) {
+      try {
+        let fullPath = filePath
+        const isRelative = !filePath.includes(':') && !filePath.startsWith('file://')
+        if (isRelative) {
+          fullPath = await coverManager.getCoverUrl(filePath)
+        }
+        let dataUrl = ''
+        if (window.electronAPI?.readFileAsDataUrl) {
+          dataUrl = await window.electronAPI.readFileAsDataUrl(fullPath) || ''
+          if (!dataUrl && fullPath !== filePath) {
+            dataUrl = await window.electronAPI.readFileAsDataUrl(filePath) || ''
+          }
+        }
+        if (dataUrl) {
+          this.coverPreviewUrls[filePath] = dataUrl
+        }
+      } catch (error) {
+        console.warn('[ResourcesEditDialog] 读取封面预览失败:', filePath, error)
+      } finally {
+        this.coverPreviewLoading[filePath] = false
       }
-      const normalizedPath = String(filePath).replace(/\\/g, '/')
-      return `file:///${normalizedPath}`
     },
     extractGameNameFromPath(filePath: string) {
       const fileName = filePath.split(/[\\/]/).pop() || ''
@@ -1343,7 +1474,7 @@ export default {
           } else {
             // 封面字段使用图片文件选择
             const coverField = new FormField_SelectFile('封面', [
-              { name: '图片文件', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'ico'] }
+              { name: '图片文件', extensions: ['jpg', 'jpeg', 'jpe', 'jfif', 'png', 'gif', 'webp', 'bmp', 'svg', 'ico'] }
             ])
             await this.handleBrowseFile(key, coverField)
           }
@@ -1406,13 +1537,11 @@ export default {
               const filePath = await window.electronAPI.selectScreenshotImage(gameScreenshotPath)
               if (filePath) {
                 this.formData[key] = filePath
-                notify.native('设置成功', '已选择截图作为封面')
               }
             } else if (window.electronAPI.selectImageFile) {
               const filePath = await window.electronAPI.selectImageFile(gameScreenshotPath)
               if (filePath) {
                 this.formData[key] = filePath
-                notify.native('设置成功', '已选择截图作为封面')
               }
             }
           } else {
@@ -1473,13 +1602,11 @@ export default {
               const filePath = await window.electronAPI.selectScreenshotImage(gameScreenshotPath)
               if (filePath) {
                 this.formData[key] = filePath
-                notify.native('设置成功', '已选择截图作为封面')
               }
             } else if (window.electronAPI.selectImageFile) {
               const filePath = await window.electronAPI.selectImageFile(gameScreenshotPath)
               if (filePath) {
                 this.formData[key] = filePath
-                notify.native('设置成功', '已选择截图作为封面')
               }
             }
           } else {
@@ -1544,7 +1671,6 @@ export default {
         const resp = await window.electronAPI.listImageFiles(folderPath)
         if (resp?.success && resp.files?.length > 0) {
           this.formData[key] = resp.files[0]
-          notify.toast('success', '设置成功', '已使用第一张图片作为封面')
         } else {
           notify.toast('warning', '设置失败', '该游戏截图文件夹中没有找到图片')
         }
@@ -1653,6 +1779,33 @@ export default {
     },
     handleClearCover(key: string) {
       this.formData[key] = ''
+    },
+    /**
+     * 把程序自带图标填进封面字段。
+     * 这里只改表单里的预览。保存时会和其他封面一样复制进存档目录。
+     * @param key 封面字段名
+     */
+    async handleUseAppIconAsCover(key: string) {
+      const filePath = this.getExecutablePathValue().trim()
+      if (!filePath || this.appIconCoverLoading) return
+      if (!this.isElectronEnvironment || !window.electronAPI?.getFileIcon) {
+        notify.toast('warning', '无法读取图标', '当前环境不支持读取程序图标')
+        return
+      }
+      this.appIconCoverLoading = true
+      try {
+        const result = await window.electronAPI.getFileIcon(filePath, 256)
+        if (!result?.success || !result.icon) {
+          notify.toast('warning', '无法读取图标', result?.error || '没有读到这个程序的图标')
+          return
+        }
+        this.formData[key] = result.icon
+      } catch (error) {
+        console.error('使用应用图标作为封面失败:', error)
+        notify.toast('error', '封面更新失败', '读取程序图标时出错了')
+      } finally {
+        this.appIconCoverLoading = false
+      }
     },
     async handleAutoDetectEngine() {
       const executablePath = this.getExecutablePathValue()
@@ -1773,8 +1926,10 @@ export default {
           const value = (resourceInstance as any)[key]
           let field: FormFieldType | null = null
           
-          // 支持 ResourceField 和 FormField 两种形式
-          if (value instanceof ResourceField) {
+          // 页面正在编辑的键，按这一页的框来写。否则标签框会把改成文本的值收成空数组。
+          if (this.formFields?.[key]) {
+            field = this.formFields[key]
+          } else if (value instanceof ResourceField) {
             field = value.editType
           } else if (value instanceof FormFieldType) {
             field = value
@@ -1799,6 +1954,7 @@ export default {
         
         // 保留不在类中定义但在 formData 中的字段（如 duration 等）
         for (const key in this.formData) {
+          if (key === 'retainedFields' || BaseResources.ephemeralFieldKeys.has(key)) continue
           if (!(key in resource) && key !== 'id' && key !== 'fileExists') {
             const value = this.formData[key]
             if (value !== undefined && value !== null) {
@@ -1827,11 +1983,19 @@ export default {
         throw error
       }
     },
+    /**
+     * 预览图加载失败时换成占位图。
+     * 已经显示的是读出来的封面时不再改地址，避免失败事件把真正的缩略图盖掉。
+     * @param event 图片错误事件
+     */
     handleImageError(event: Event) {
-      const target = event.target as HTMLImageElement
-      if (target) {
-        target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjI4MCIgdmlld0JveD0iMCAwIDIwMCAyODAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjgwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xMDAgMTIwSDgwVjE2MEgxMjBWMTIwWiIgZmlsbD0iIzlDQTNBRiIvPgo8cGF0aCBkPSJNODAgMTIwTDEwMCAxMDBMMTIwIDEyMEwxMDAgMTQwTDgwIDEyMFoiIGZpbGw9IiM5Q0EzQUYiLz4KPC9zdmc+'
+      const target = event.target as HTMLImageElement | null
+      if (!target?.isConnected) return
+      const shown = target.src || ''
+      if (shown.startsWith('data:image/jpeg') || shown.startsWith('data:image/png') || shown.startsWith('data:image/webp') || shown.startsWith('data:image/gif')) {
+        return
       }
+      target.src = this.coverPlaceholderSrc()
     },
     getImageFileName(imagePath: string) {
       if (!imagePath) return ''
@@ -1919,6 +2083,15 @@ export default {
   margin-bottom: 20px;
 }
 
+.type-choice {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
 .form-label {
   display: block;
   color: var(--text-primary);
@@ -1965,7 +2138,7 @@ export default {
 .btn-browse {
   padding: var(--spacing-md, 12px) var(--spacing-xl, 20px);
   background: var(--accent-color);
-  color: white;
+  color: var(--text-on-accent, #1a1a1a);
   border: none;
   border-radius: var(--radius-md, 6px);
   font-size: 1rem;
@@ -2049,7 +2222,7 @@ export default {
 
 .btn-cover-action {
   background: var(--accent-color);
-  color: white;
+  color: var(--text-on-accent, #1a1a1a);
   border: none;
   padding: 10px 16px;
   border-radius: 6px;
@@ -2113,7 +2286,7 @@ export default {
 
 .btn-confirm {
   background: var(--accent-color);
-  color: white;
+  color: var(--text-on-accent, #1a1a1a);
   border: none;
   padding: 10px 20px;
   border-radius: 6px;

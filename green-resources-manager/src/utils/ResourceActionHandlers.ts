@@ -7,6 +7,143 @@ import { BaseResources } from '@resources/base/ResourcesDataBase.ts'
 import { isArchiveFile } from '../composables/useArchive'
 import notify from './NotificationService.ts'
 import saveManager from './SaveManager.ts'
+import { normalizeWebUrl } from './webUrl.ts'
+
+/**
+ * cbr 是 RAR 漫画包，cbz 是 ZIP 漫画包。
+ * 内置阅读器只能直接列 cbz，这两种都允许交给系统默认程序或用户指定的程序。
+ */
+const COMIC_ARCHIVE_PATTERN = /\.(cbr|cbz)$/i
+
+/**
+ * 判断路径是不是 cbr 或 cbz 漫画压缩包。
+ * @param filePath 资源路径
+ * @returns 扩展名是 .cbr 或 .cbz 时为 true
+ */
+export function isComicArchivePath(filePath: string | null | undefined): boolean {
+  return COMIC_ARCHIVE_PATTERN.test(String(filePath || '').trim())
+}
+
+/**
+ * 把用户选中的漫画阅读器记到图片设置里。
+ * 右键「用指定程序打开」和设置页共用这一项，避免两处各记一个路径。
+ * @param programPath 可执行文件路径
+ */
+async function rememberComicArchiveProgram(programPath: string): Promise<void> {
+  const settings = await saveManager.loadSettings()
+  if (!settings || typeof settings !== 'object') {
+    return
+  }
+  if (!settings.image || typeof settings.image !== 'object') {
+    settings.image = {}
+  }
+  settings.image.comicArchiveProgramPath = programPath
+  const saved = await saveManager.saveSettings(settings)
+  if (saved && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('comic-archive-program-selected', { detail: programPath }))
+  }
+}
+
+/**
+ * 用默认程序或指定程序打开 cbr/cbz。
+ * 默认程序走系统关联；指定程序用设置里保存的 exe，没有就先让用户选一个。
+ * @param resource 漫画资源
+ * @param context 页面上下文
+ * @param mode default 为系统默认程序，specified 为用户指定的程序
+ */
+async function openComicArchive(resource: any, context: ActionHandlerContext, mode: 'default' | 'specified'): Promise<void> {
+  const resourceName = BaseResources.extractPrimitiveValue(resource.name?.value || resource.name)
+  const resourcePath = BaseResources.extractPrimitiveValue(
+    resource.resourcePath?.value || resource.resourcePath
+  )
+  if (!resourcePath || !String(resourcePath).trim()) {
+    notify.toast('error', '打开失败', `漫画「${resourceName || ''}」没有路径`)
+    return
+  }
+  if (!isComicArchivePath(resourcePath)) {
+    notify.toast('warning', '打开失败', '只能用这种方式打开 cbr 或 cbz 漫画压缩包')
+    return
+  }
+  if (!context.isElectronEnvironment || !window.electronAPI) {
+    notify.toast('error', '打开失败', '当前环境无法打开漫画压缩包')
+    return
+  }
+
+  if (context.updateViewInfo) {
+    try {
+      await context.updateViewInfo(resource)
+    } catch (error) {
+      console.warn('[ResourceActionHandlers] 更新漫画浏览记录失败:', error)
+    }
+  }
+
+  if (mode === 'default') {
+    const result = await window.electronAPI.openExternal(resourcePath)
+    if (result?.success) {
+      notify.toast('success', '已用默认程序打开', `「${resourceName || '漫画'}」已交给系统默认程序`)
+      if (context.closeDetail) context.closeDetail()
+    } else {
+      notify.toast('error', '打开失败', result?.error || '系统没有打开这个压缩包')
+    }
+    return
+  }
+
+  const settings = await saveManager.loadSettings()
+  /** 设置里记下的外部漫画程序。空着时这次打开会先让用户选。 */
+  let programPath = String(settings?.image?.comicArchiveProgramPath || '').trim()
+  if (!programPath) {
+    if (!window.electronAPI.selectExecutableFile) {
+      notify.toast('warning', '还没有指定程序', '请到设置 → 图片里选择用来打开漫画压缩包的程序')
+      return
+    }
+    const selected = await window.electronAPI.selectExecutableFile()
+    programPath = String(selected || '').trim()
+    if (!programPath) {
+      return
+    }
+    await rememberComicArchiveProgram(programPath)
+  }
+
+  if (!window.electronAPI.openFileWithProgram) {
+    notify.toast('error', '打开失败', '当前环境不能用指定程序打开文件')
+    return
+  }
+  const result = await window.electronAPI.openFileWithProgram(programPath, resourcePath)
+  if (result?.success) {
+    notify.toast('success', '已用指定程序打开', `「${resourceName || '漫画'}」已交给指定程序`)
+    if (context.closeDetail) context.closeDetail()
+  } else {
+    notify.toast('error', '打开失败', result?.error || '指定程序没有打开这个压缩包')
+  }
+}
+
+/**
+ * 用系统默认程序打开 cbr/cbz。
+ * @param resource 漫画资源
+ * @param context 页面上下文
+ */
+export const openComicArchiveDefaultHandler = async (resource: any, context: ActionHandlerContext) => {
+  try {
+    await openComicArchive(resource, context, 'default')
+  } catch (error: any) {
+    console.error('[ResourceActionHandlers] 用默认程序打开漫画失败:', error)
+    notify.toast('error', '打开失败', error?.message || '未知错误')
+  }
+}
+
+/**
+ * 用设置中指定的程序打开 cbr/cbz。
+ * @param resource 漫画资源
+ * @param context 页面上下文
+ */
+export const openComicArchiveSpecifiedHandler = async (resource: any, context: ActionHandlerContext) => {
+  try {
+    await openComicArchive(resource, context, 'specified')
+  } catch (error: any) {
+    console.error('[ResourceActionHandlers] 用指定程序打开漫画失败:', error)
+    notify.toast('error', '打开失败', error?.message || '未知错误')
+  }
+}
 
 /**
  * Action Handler 函数类型
@@ -88,7 +225,6 @@ const actionHandlers = new Map<string, ActionHandler>()
  */
 export function registerActionHandler(handlerName: string, handler: ActionHandler) {
   actionHandlers.set(handlerName, handler)
-  console.log(`[ResourceActionHandlers] 已注册 handler: ${handlerName}`)
 }
 
 /**
@@ -366,6 +502,12 @@ export const openAlbumHandler: ActionHandler = async (resource, context) => {
     )
     console.log('开始打开专辑:', resourceName, resourcePath)
 
+    // cbr 是 RAR，内置阅读器列不出里面的图。提前停住，避免打开一个空白阅读器。
+    if (isComicArchivePath(resourcePath) && /\.cbr$/i.test(String(resourcePath).trim())) {
+      notify.toast('info', '内置阅读器打不开 cbr', '请改用「用默认程序打开」或「用指定程序打开」。指定程序可以在设置 → 图片里选好。')
+      return
+    }
+
     // 增加浏览次数（无论打开方式都应记录）
     if (context.updateViewInfo) {
       try {
@@ -378,7 +520,9 @@ export const openAlbumHandler: ActionHandler = async (resource, context) => {
 
     // 优先走新标签页打开方式
     if (context.isElectronEnvironment && window.electronAPI?.tabOpenComicViewer && resourcePath) {
-      const result = await window.electronAPI.tabOpenComicViewer(resourcePath, resourceName)
+      // 阅读器是单独的页面，不会继承主窗口的 data-theme，所以把当前主题带过去。
+      const theme = document.documentElement.getAttribute('data-theme') || 'light'
+      const result = await window.electronAPI.tabOpenComicViewer(resourcePath, resourceName, theme)
       if (result.success) {
         // 关闭详情页面，让用户回到资源列表（新标签页会自动激活并显示漫画）
         if (context.closeDetail) {
@@ -580,19 +724,50 @@ export const openWebsiteHandler: ActionHandler = async (resource, context) => {
       }
     }
 
-    // 打开网站
-    if (context.isElectronEnvironment && window.electronAPI && window.electronAPI.openExternal) {
-      const result = await window.electronAPI.openExternal(url)
-      if (result.success) {
-        console.log('[ResourceActionHandlers] 网站访问成功:', resourceName)
-        notify.native('网站已打开', `正在访问: ${resourceName}`)
-      } else {
+    /**
+     * 保住用户写上的 https。
+     * 裸域名补成 https，javascript: 这类地址不打开。
+     */
+    const safeUrl = normalizeWebUrl(url)
+    if (!safeUrl) {
+      notify.toast('error', '打开失败', `网站 "${resourceName}" 的地址不是网页链接`)
+      return
+    }
+
+    /**
+     * 打开方式来自设置页。
+     * 没读到设置时仍用系统浏览器，和升级前的行为一致。
+     */
+    let openMode: 'external' | 'internal' = 'external'
+    try {
+      const globalSettings = context.getGlobalSettings
+        ? await context.getGlobalSettings()
+        : await saveManager.loadSettings()
+      if (globalSettings?.websiteOpenMode === 'internal') {
+        openMode = 'internal'
+      }
+    } catch (error) {
+      console.warn('[ResourceActionHandlers] 读取网站打开方式失败，改用默认浏览器:', error)
+    }
+
+    // 软件新标签页不注入应用权限，只加载 http 或 https。
+    if (openMode === 'internal' && context.isElectronEnvironment && window.electronAPI?.tabCreate) {
+      const result = await window.electronAPI.tabCreate({
+        url: safeUrl,
+        title: resourceName || '网站',
+        external: true
+      })
+      if (!result.success) {
+        notify.toast('error', '访问失败', `无法打开网站: ${result.error || '未知错误'}`)
+        return
+      }
+    } else if (context.isElectronEnvironment && window.electronAPI?.openExternal) {
+      const result = await window.electronAPI.openExternal(safeUrl)
+      if (!result.success) {
         notify.toast('error', '访问失败', `无法打开网站: ${result.error || '未知错误'}`)
       }
     } else {
-      // 降级处理：在浏览器中打开
-      window.open(url, '_blank')
-      notify.native('网站已打开', `正在访问: ${resourceName}`)
+      window.open(safeUrl, '_blank')
     }
     
     // 关闭详情页面
@@ -719,17 +894,10 @@ export const playVideoHandler: ActionHandler = async (resource, context) => {
           return
         }
       }
-      if (window.electronAPI?.openVideoWindow) {
-        const result = await window.electronAPI.openVideoWindow(filePath, {
-          title: resourceName,
-          width: 1200,
-          height: 800,
-          resizable: true,
-          minimizable: true,
-          maximizable: true
-        })
+      if (window.electronAPI?.tabOpenVideoPlayer) {
+        const result = await window.electronAPI.tabOpenVideoPlayer(filePath, resourceName)
         if (!result?.success) {
-          notify.toast('error', '播放失败', result?.error || '打开视频窗口失败')
+          notify.toast('error', '播放失败', result?.error || '打开视频标签页失败')
           return
         }
       } else {
@@ -809,6 +977,8 @@ registerActionHandler('launchExecutable', launchExecutableHandler)
 registerActionHandler('launchDefault', launchDefaultHandler)
 registerActionHandler('launchWithLocale', launchWithLocaleHandler)
 registerActionHandler('openAlbum', openAlbumHandler)
+registerActionHandler('openComicArchiveDefault', openComicArchiveDefaultHandler)
+registerActionHandler('openComicArchiveSpecified', openComicArchiveSpecifiedHandler)
 registerActionHandler('openNovelReader', openNovelReaderHandler)
 registerActionHandler('openWebsite', openWebsiteHandler)
 registerActionHandler('playAudio', playAudioHandler)

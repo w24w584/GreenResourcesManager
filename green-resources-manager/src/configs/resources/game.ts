@@ -22,8 +22,7 @@ export class Game extends BaseResources {
 		'.exe',  // 可执行文件
 		'.swf',  // Flash 游戏
 		'.bat',  // 批处理启动文件
-		'.lnk',  // Windows 快捷方式
-		'.zip', '.rar', '.7z', '.tar', '.gz', '.tar.gz', '.bz2', '.tar.bz2', '.xz', '.tar.xz'  // 压缩包
+		'.lnk'   // Windows 快捷方式
 	]
 	
 	resourceType: ResourceField<string> = new ResourceField<string>({
@@ -149,6 +148,7 @@ export class Game extends BaseResources {
 		const idValue = this.id.value || this.generateId();
 		return {
 			id: idValue,
+			fingerprint: this.fingerprint.value || '',
 			resourceType: this.resourceType.value || this.resourceType.defaultValue || 'game',
 			name: this.name.value || '',
 			nickname: this.nickname.value || '',
@@ -172,7 +172,9 @@ export class Game extends BaseResources {
 			addedDate: this.addedDate.value || '',
 			rating: this.rating.value || 0,
 			comment: this.comment.value || '',
-			isFavorite: this.isFavorite.value || false
+			isFavorite: this.isFavorite.value || false,
+			finished: this.finished.value === true,
+			finishedAt: this.finished.value === true ? (this.finishedAt.value || '') : ''
 		}
 	}
 
@@ -360,6 +362,13 @@ export class Game extends BaseResources {
 				key: 'folder',
 				icon: '📁',
 				label: '打开文件夹',
+				class: 'btn-open-folder'
+			},
+			{
+				// 截图不在游戏自己的目录里，详情里需要能直接打开存放位置
+				key: 'screenshot-folder',
+				icon: '📸',
+				label: '打开截图文件夹',
 				class: 'btn-open-folder'
 			},
 			{

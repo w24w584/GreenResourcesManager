@@ -61,7 +61,7 @@ export class Audio extends BaseResources {
 	coverPath: ResourceField<string> = new ResourceField<string>({
 		saveable: true,
 		editType: new FormField_SelectFile('缩略图', [
-			{ name: '图片文件', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'] },
+			{ name: '图片文件', extensions: ['jpg', 'jpeg', 'jpe', 'jfif', 'png', 'gif', 'webp', 'avif', 'bmp', 'svg'] },
 			{ name: '所有文件', extensions: ['*'] }
 		], false)
 	})
@@ -99,6 +99,7 @@ export class Audio extends BaseResources {
 	getSaveData(): any {
 		return {
 			id: this.id.value || this.id.defaultValue || '',
+			fingerprint: this.fingerprint.value || '',
 			resourceType: this.resourceType.value || this.resourceType.defaultValue || 'audio',
 			name: this.name.value || '',
 			description: this.description.value || '',
@@ -115,7 +116,9 @@ export class Audio extends BaseResources {
 			addedDate: this.addedDate.value || '',
 			rating: this.rating.value || 0,
 			comment: this.comment.value || '',
-			isFavorite: this.isFavorite.value || false
+			isFavorite: this.isFavorite.value || false,
+			finished: this.finished.value === true,
+			finishedAt: this.finished.value === true ? (this.finishedAt.value || '') : ''
 		}
 	}
 

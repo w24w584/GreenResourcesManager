@@ -1,6 +1,8 @@
 const { BrowserView, app } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const { resolveMainPreloadPath } = require('../utils/preload-path')
+const { normalizeWebUrl } = require('../utils/open-browser-url')
 
 /**
  * 标签页管理器
@@ -16,7 +18,8 @@ class TabManager {
     this.headerHeight = 0 // 标签页从窗口顶部开始
     this.audioPlayerHeight = 80 // 底部音频播放器高度
     this.tabBarHeight = 40 // 标签栏高度
-    this.preloadPath = this.resolvePreloadPath()
+    /** 标签页 BrowserView 与主窗口加载同一份 preload，内部页面才能调用 IPC */
+    this.preloadPath = resolveMainPreloadPath()
 
     // 监听窗口大小变化
     if (mainWindow) {
@@ -27,23 +30,6 @@ class TabManager {
     this.createHomeTab()
   }
 
-  /**
-   * 解析 preload.js 路径，使标签页（BrowserView）也能访问 window.electronAPI
-   * 与主窗口保持一致，确保漫画阅读器等内部页面可在新标签页内调用 IPC
-   */
-  resolvePreloadPath() {
-    if (this.isDev) {
-      return path.join(__dirname, '../preload.js')
-    }
-    const appPath = app.getAppPath()
-    const possiblePaths = [
-      path.join(appPath, 'electron', 'preload.js'),
-      path.join(appPath, 'preload.js'),
-      path.join(__dirname, '../preload.js')
-    ]
-    return possiblePaths.find((p) => fs.existsSync(p)) || possiblePaths[0]
-  }
-  
   /**
    * 创建默认主页标签页（特殊标签页，不创建BrowserView）
    */
@@ -69,23 +55,61 @@ class TabManager {
   }
 
   /**
+   * 判断这个地址是不是网页。
+   * 外部网站标签只允许停留在 http 或 https 上。
+   * @param {string} target 即将打开的地址
+   * @returns {boolean} 是网页地址时为 true
+   */
+  isWebUrl(target) {
+    return !!normalizeWebUrl(target)
+  }
+
+  /**
    * 创建新标签页
    * @param {string} url - 要加载的 URL（可选，默认空白页）
    * @param {string} title - 标签页标题（可选）
+   * @param {{ external?: boolean }} options - external 为 true 时按外部网站打开，不注入应用权限
    * @returns {string} 标签页 ID
    */
-  createTab(url = null, title = '新标签页') {
+  createTab(url = null, title = '新标签页', options = {}) {
+    /** 外部网站不能拿到应用的 preload，否则任意网页都能调用本机接口。 */
+    const external = options.external === true
     const tabId = `tab-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
     
     // 创建 BrowserView
     const view = new BrowserView({
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        webSecurity: false,
-        preload: this.preloadPath
-      }
+      webPreferences: external
+        ? {
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: true,
+            webSecurity: true,
+            partition: 'persist:websites'
+          }
+        : {
+            nodeIntegration: false,
+            contextIsolation: true,
+            webSecurity: false,
+            preload: this.preloadPath
+          }
     })
+
+    if (external) {
+      // 页面里再开的窗口也留在软件标签里，仍然只接受网页地址。
+      view.webContents.setWindowOpenHandler(({ url: nextUrl }) => {
+        const safeUrl = normalizeWebUrl(nextUrl)
+        if (!safeUrl) {
+          return { action: 'deny' }
+        }
+        this.createTab(safeUrl, '新标签页', { external: true })
+        return { action: 'deny' }
+      })
+      view.webContents.on('will-navigate', (event, nextUrl) => {
+        if (!this.isWebUrl(nextUrl)) {
+          event.preventDefault()
+        }
+      })
+    }
 
     // 确定要加载的 URL
     let targetUrl = url
@@ -136,7 +160,8 @@ class TabManager {
       view: view,
       url: targetUrl,
       title: title,
-      isHome: false // 普通标签页
+      isHome: false, // 普通标签页
+      external // 外部网站标签，导航时继续限制为网页地址
     }
     this.tabs.set(tabId, tabInfo)
 
@@ -187,6 +212,10 @@ class TabManager {
       this.mainWindow.setBrowserView(activeTab.view)
       this.updateTabBounds(tabId)
       this.activeTabId = tabId
+      // 把键盘焦点交给标签页，视频播放器的空格和方向键才能马上生效
+      if (!activeTab.view.webContents.isDestroyed()) {
+        activeTab.view.webContents.focus()
+      }
 
       // 通知渲染进程活动标签页已改变
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
@@ -254,8 +283,6 @@ class TabManager {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.send('tab-closed', { tabId })
     }
-
-    console.log('✅ 关闭标签页:', tabId)
   }
 
   /**
@@ -289,6 +316,10 @@ class TabManager {
     }
 
     const tabInfo = this.tabs.get(tabId)
+    if (tabInfo.external && !this.isWebUrl(url)) {
+      console.warn('外部网站标签拒绝打开非网页地址:', url)
+      return
+    }
     tabInfo.url = url
     tabInfo.view.webContents.loadURL(url).catch(err => {
       console.error('导航标签页失败:', err)

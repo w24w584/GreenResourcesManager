@@ -32,6 +32,7 @@
 const { BrowserWindow, app } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const { resolveMainPreloadPath } = require('../utils/preload-path')
 
 // 主窗口实例
 let mainWindow = null
@@ -65,14 +66,150 @@ function markMinimizeNoticeShown() {
 }
 
 /**
+ * 界面缩放的下限，约等于默认大小的 50%。
+ * Electron 的 zoom level 满足 scale = 1.2 ^ level，所以用对数把百分比换算成 level。
+ */
+const MIN_ZOOM_LEVEL = Math.log(0.5) / Math.log(1.2)
+
+/**
+ * 界面缩放的上限，约等于默认大小的 300%。
+ * 再放大布局容易挤出窗口，300% 和 Chromium 常见的缩放下限对称，足够把字号看清楚。
+ */
+const MAX_ZOOM_LEVEL = Math.log(3) / Math.log(1.2)
+
+/**
+ * Ctrl+滚轮每一格的缩放步长。
+ * 1.2 ^ 0.5 ≈ 1.095，大约 10%，和浏览器滚轮缩放的手感接近；
+ * 菜单里的 Ctrl+加号/减号仍用更小的 0.1，方便微调。
+ */
+const WHEEL_ZOOM_STEP = 0.5
+
+/**
+ * 是否正在把缩放写回窗口。
+ * setZoomLevel 不应再次进入缩放逻辑，避免和 zoom-changed 叠成死循环。
+ */
+let applyingZoom = false
+
+/**
+ * 把缩放级别限制在 50%～300%。
+ * @param {number} level Electron zoom level
+ * @returns {number} 限制后的 zoom level；非法输入回落到 0（100%）
+ */
+function clampZoomLevel(level) {
+  if (typeof level !== 'number' || Number.isNaN(level)) return 0
+  return Math.min(MAX_ZOOM_LEVEL, Math.max(MIN_ZOOM_LEVEL, level))
+}
+
+/**
+ * 缩放记忆文件路径。
+ * 放在 userData 而不是项目目录，打包后和开发环境都能跨重启保留用户选过的字号。
+ * @returns {string}
+ */
+function getZoomLevelFilePath() {
+  return path.join(app.getPath('userData'), 'app-zoom-level.json')
+}
+
+/**
+ * 读取上次保存的界面缩放。
+ * @returns {number} zoom level，没有记录或读失败时返回 0
+ */
+function readSavedZoomLevel() {
+  try {
+    const raw = fs.readFileSync(getZoomLevelFilePath(), 'utf8')
+    const data = JSON.parse(raw)
+    if (data && typeof data.zoomLevel === 'number') {
+      return clampZoomLevel(data.zoomLevel)
+    }
+  } catch {
+    // 首次启动还没有这个文件，按 100% 处理
+  }
+  return 0
+}
+
+/**
+ * 把当前缩放写到磁盘，下次启动时恢复。
+ * @param {number} level 已经限制过范围的 zoom level
+ */
+function writeSavedZoomLevel(level) {
+  try {
+    const payload = JSON.stringify({ zoomLevel: Math.round(level * 1000) / 1000 })
+    fs.writeFileSync(getZoomLevelFilePath(), payload, 'utf8')
+  } catch (err) {
+    console.warn('保存界面缩放失败:', err)
+  }
+}
+
+/**
+ * 设置主窗口整体缩放，并可选地记住、通知界面。
+ *
+ * 设计原因：页面里大量字号是写死的 px，只改根元素 font-size 覆盖不到。
+ * 视图菜单已经用 webContents.setZoomLevel 缩放整个界面（文字、间距、图片一起变），
+ * Ctrl+滚轮必须走同一条路径，百分比提示才和实际看到的大小一致。
+ *
+ * @param {number} level 目标 zoom level
+ * @param {{ notify?: boolean, persist?: boolean }} [options]
+ * notify 为 false 时不弹「缩放至」提示（用于启动时恢复）；
+ * persist 为 false 时不写磁盘（恢复时避免无意义覆盖）。
+ * @returns {number} 实际应用的 zoom level
+ */
+function setMainWindowZoom(level, options = {}) {
+  const notify = options.notify !== false
+  const persist = options.persist !== false
+  if (!mainWindow || mainWindow.isDestroyed()) return 0
+
+  const next = clampZoomLevel(level)
+  applyingZoom = true
+  try {
+    mainWindow.webContents.setZoomLevel(next)
+    if (persist) writeSavedZoomLevel(next)
+    if (notify) {
+      // 百分比按 Chromium 公式 scale = 1.2 ^ level 计算，避免渲染进程再用 2^level 算错
+      const zoomFactor = Math.pow(1.2, next)
+      mainWindow.webContents.send('app-zoom-changed', { zoomLevel: next, zoomFactor })
+    }
+  } finally {
+    applyingZoom = false
+  }
+  return next
+}
+
+/**
+ * 绑定 Ctrl+滚轮缩放，并在页面加载完成后恢复上次的缩放。
+ *
+ * Electron 29 在用户按住 Ctrl 滚动滚轮时，只会调用 ContentsZoomChange 发出
+ * zoom-changed（方向为 in / out），不会自己改 zoom level。所以要在这里补上 setZoomLevel。
+ * 只监听这个事件、不在渲染进程再听 wheel，是为了避免一次滚动缩两次。
+ *
+ * @param {BrowserWindow} win 主窗口
+ */
+function bindMainWindowZoom(win) {
+  win.webContents.on('zoom-changed', (_event, zoomDirection) => {
+    if (applyingZoom || !mainWindow || mainWindow.isDestroyed()) return
+    const currentZoom = mainWindow.webContents.getZoomLevel()
+    const delta = zoomDirection === 'in' ? WHEEL_ZOOM_STEP : -WHEEL_ZOOM_STEP
+    setMainWindowZoom(currentZoom + delta)
+  })
+
+  // 页面每次加载都会回到默认 100%，所以在 did-finish-load 里把记忆的缩放设回去
+  win.webContents.on('did-finish-load', () => {
+    const saved = readSavedZoomLevel()
+    if (saved === 0) return
+    setMainWindowZoom(saved, { notify: false, persist: false })
+  })
+}
+
+/**
  * 创建主窗口
  * @param {boolean} isDev - 是否为开发环境
  * @param {Function} getMinimizeToTrayEnabled - 获取最小化到托盘功能状态
  * @param {Function} getSystemTray - 获取系统托盘实例的函数
  * @param {Function} displayBalloon - 显示托盘通知的函数
+ * @param {{ showWhenReady?: boolean }} [options] showWhenReady 为 false 时，窗口创建后留在后台（右键解压用）
  * @returns {BrowserWindow} 主窗口实例
  */
-function createMainWindow(isDev, getMinimizeToTrayEnabled, getSystemTray, displayBalloon) {
+function createMainWindow(isDev, getMinimizeToTrayEnabled, getSystemTray, displayBalloon, options = {}) {
+  /** 右键解压拉起时不弹出主界面。 */
+  const showWhenReady = options.showWhenReady !== false
   // 如果窗口已存在，直接返回
   if (mainWindow && !mainWindow.isDestroyed()) {
     return mainWindow
@@ -109,33 +246,9 @@ function createMainWindow(isDev, getMinimizeToTrayEnabled, getSystemTray, displa
   
   // 获取应用路径（在打包后也能正确工作）
   const appPath = app.getAppPath()
-  
-  // 确定 preload.js 路径
-  let preloadPath
-  if (isDev) {
-    // 开发环境：使用相对路径（preload.js 现在在 electron/ 目录下）
-    preloadPath = path.join(__dirname, '../preload.js')
-  } else {
-    // 生产环境：尝试多个可能的路径
-    const fs = require('fs')
-    const possiblePaths = [
-      path.join(appPath, 'electron', 'preload.js'), // resources/app/electron/preload.js
-      path.join(appPath, 'preload.js'),             // resources/app/preload.js (备用)
-      path.join(__dirname, '../preload.js')         // 备用路径
-    ]
-    
-    // 查找存在的 preload.js 文件
-    preloadPath = possiblePaths.find(p => fs.existsSync(p))
-    
-    if (!preloadPath) {
-      // 如果都找不到，使用第一个路径（让 Electron 报错）
-      preloadPath = possiblePaths[0]
-      console.warn('⚠️ 警告: 找不到 preload.js 文件，尝试的路径:', possiblePaths)
-      console.warn('⚠️ 将使用路径:', preloadPath)
-    } else {
-      console.log('✅ 找到 preload.js 文件:', preloadPath)
-    }
-  }
+
+  /** 与桌宠、视频、标签页共用同一解析，避免各窗口把相对路径多写一层 */
+  const preloadPath = resolveMainPreloadPath()
   
   // 创建浏览器窗口
   mainWindow = new BrowserWindow({
@@ -158,8 +271,12 @@ function createMainWindow(isDev, getMinimizeToTrayEnabled, getSystemTray, displa
       : path.join(appPath, 'public', 'butter-icon.ico'), // ✅ 使用 appPath 而不是 __dirname
     titleBarStyle: 'default',
     autoHideMenuBar: true, // 自动隐藏菜单栏（Windows/Linux 上可通过 Alt 键显示）
-    show: false // 先不显示，等加载完成后再显示
+    show: false, // 先不显示，等加载完成后再显示
+    skipTaskbar: !showWhenReady
   })
+
+  // 先挂上滚轮缩放，再加载页面，这样第一次 did-finish-load 就能恢复上次的大小
+  bindMainWindowZoom(mainWindow)
 
   // 加载应用
   console.log('当前环境:', isDev ? '开发环境' : '生产环境')
@@ -212,13 +329,12 @@ function createMainWindow(isDev, getMinimizeToTrayEnabled, getSystemTray, displa
 
   // 窗口准备好后显示
   mainWindow.once('ready-to-show', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.show()
-      
-      // 开发环境下自动打开开发者工具
-      if (isDev) {
-        mainWindow.webContents.openDevTools()
-      }
+    if (!mainWindow || mainWindow.isDestroyed() || !showWhenReady) return
+    mainWindow.show()
+
+    // 开发环境下自动打开开发者工具
+    if (isDev) {
+      mainWindow.webContents.openDevTools()
     }
   })
   
@@ -294,7 +410,8 @@ function showAndFocusMainWindow() {
       mainWindow.restore()
     }
     
-    // 显示并聚焦窗口
+    // 右键解压时主窗口不在任务栏上，这里再放回来
+    mainWindow.setSkipTaskbar(false)
     mainWindow.show()
     mainWindow.focus()
     
@@ -376,11 +493,9 @@ function registerIpcHandlers(ipcMain) {
     }
   })
 
-  // 设置缩放级别
+  // 设置缩放级别（与 Ctrl+滚轮、视图菜单共用同一套范围和记忆）
   ipcMain.handle('set-zoom-level', (event, zoomLevel) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.setZoomLevel(zoomLevel)
-    }
+    setMainWindowZoom(zoomLevel)
   })
 
   // 获取当前缩放级别
@@ -391,27 +506,23 @@ function registerIpcHandlers(ipcMain) {
     return 0
   })
 
-  // 放大
+  // 放大一档，步长与滚轮一致
   ipcMain.handle('zoom-in', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      const currentZoom = mainWindow.webContents.getZoomLevel()
-      mainWindow.webContents.setZoomLevel(currentZoom + 0.5)
+      setMainWindowZoom(mainWindow.webContents.getZoomLevel() + WHEEL_ZOOM_STEP)
     }
   })
 
-  // 缩小
+  // 缩小一档，步长与滚轮一致
   ipcMain.handle('zoom-out', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      const currentZoom = mainWindow.webContents.getZoomLevel()
-      mainWindow.webContents.setZoomLevel(currentZoom - 0.5)
+      setMainWindowZoom(mainWindow.webContents.getZoomLevel() - WHEEL_ZOOM_STEP)
     }
   })
 
   // 重置缩放
   ipcMain.handle('reset-zoom', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.setZoomLevel(0)
-    }
+    setMainWindowZoom(0)
   })
 }
 
@@ -419,6 +530,7 @@ module.exports = {
   createMainWindow,
   getMainWindow,
   showAndFocusMainWindow,
-  registerIpcHandlers
+  registerIpcHandlers,
+  setMainWindowZoom
 }
 

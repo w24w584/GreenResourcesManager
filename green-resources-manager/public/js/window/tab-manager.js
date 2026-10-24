@@ -124,8 +124,6 @@ class TabManager {
 
     // 设置为活动标签页
     this.setActiveTab(tabId)
-
-    console.log('✅ 创建新标签页:', tabId, targetUrl)
     return tabId
   }
 
@@ -236,8 +234,6 @@ class TabManager {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.send('tab-closed', { tabId })
     }
-
-    console.log('✅ 关闭标签页:', tabId)
   }
 
   /**

@@ -6,5 +6,30 @@
     "features": "機能",
     "faq": "よくある質問",
     "shortcuts": "ショートカット"
+  },
+  "sidebar": {
+    "title": "📚 ヘルプセンター",
+    "expandMenu": "メニューを開く",
+    "collapseMenu": "メニューを閉じる",
+    "userManual": "ユーザーマニュアル",
+    "apiManual": "API マニュアル",
+    "intro": "紹介",
+    "general": "共通機能",
+    "pages": "ページとリソース",
+    "resources": "リソース管理",
+    "faq": "よくある質問",
+    "apiGames": "ゲーム",
+    "apiManga": "漫画",
+    "apiVideos": "動画",
+    "apiNovels": "小説",
+    "apiWebsites": "ウェブサイト",
+    "apiAudio": "オーディオ",
+    "workshop": "ワークショップ",
+    "workshopPages": "ページの追加",
+    "workshopPlugin": "機能の追加",
+    "workshopNote": "メモプラグイン",
+    "workshopCalendar": "カレンダー",
+    "support": "サポートとフィードバック",
+    "about": "このアプリについて"
   }
 }

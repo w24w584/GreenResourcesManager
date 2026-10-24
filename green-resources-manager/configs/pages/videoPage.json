@@ -93,6 +93,12 @@
       }
     },
     {
+      "key": "rating",
+      "title": "星级筛选",
+      "filterType": "rating",
+      "params": {}
+    },
+    {
       "key": "tags",
       "title": "标签筛选",
       "filterType": "resourceField",
@@ -121,6 +127,14 @@
         "field": "series"
       },
       "isArray": false
+    },
+    {
+      "key": "releaseDate",
+      "title": "发行日期筛选",
+      "filterType": "dateField",
+      "params": {
+        "field": "releaseDate"
+      }
     }
   ]
 }

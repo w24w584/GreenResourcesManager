@@ -33,6 +33,7 @@ const { BrowserWindow, app, screen } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const fileUtils = require('../utils/file-utils')
+const { resolveMainPreloadPath } = require('../utils/preload-path')
 
 // 桌宠窗口实例
 let petWindow = null
@@ -50,20 +51,12 @@ function createPetWindow(isDev) {
 
   // 获取应用路径（在打包后也能正确工作）
   const appPath = app.getAppPath()
-  
-  // 确定 preload.js 路径
-  let preloadPath
-  if (isDev) {
-    preloadPath = path.join(__dirname, '../../preload.js')
-  } else {
-    const fs = require('fs')
-    const possiblePaths = [
-      path.join(appPath, 'preload.js'),
-      path.join(appPath, 'public', 'preload.js'),
-      path.join(__dirname, '../../preload.js')
-    ]
-    preloadPath = possiblePaths.find(p => fs.existsSync(p)) || possiblePaths[0]
-  }
+
+  /**
+   * 桌宠拖动、好感、缩放都走 IPC。
+   * 以前从 electron/window 往上两级去找 preload，文件不存在，这些调用全部空转。
+   */
+  const preloadPath = resolveMainPreloadPath()
 
   // 获取主显示器信息
   const primaryDisplay = screen.getPrimaryDisplay()
@@ -71,7 +64,7 @@ function createPetWindow(isDev) {
 
   // 创建桌宠窗口
   petWindow = new BrowserWindow({
-    width: 1200,  // 桌宠窗口大小（500px 菜单 + 700px 主区域）
+    width: 850,  // 桌宠窗口大小（500px 菜单 + 350px 主区域）
     height: 700,  // 增大高度以显示对话框
     frame: false,  // 无边框
     transparent: true,  // 透明背景
@@ -118,9 +111,10 @@ function createPetWindow(isDev) {
   // 窗口准备好后显示
   petWindow.once('ready-to-show', () => {
     if (petWindow && !petWindow.isDestroyed()) {
-      // 默认显示在屏幕右下角（窗口大小600x400）
-      const x = screenWidth - 1230 // 窗口宽度(1200) + 30px 边距
-      const y = screenHeight - 430 // 窗口高度(400) + 30px 边距
+      // 默认显示在屏幕右下角：用窗口实际尺寸计算，避免按旧尺寸定位把桌宠下半身推出屏幕
+      const [winWidth, winHeight] = petWindow.getSize()
+      const x = screenWidth - winWidth - 30
+      const y = screenHeight - winHeight - 30
       petWindow.setPosition(x, y)
       petWindow.show()
     }
@@ -143,15 +137,48 @@ function getPetWindow() {
 }
 
 /**
- * 显示桌宠窗口
- * @param {boolean} isDev - 是否为开发环境
+ * 等待桌宠页面就绪；页面已加载完时直接返回
+ * @param {BrowserWindow} win 桌宠窗口
+ * @returns {Promise<void>}
  */
-function showPetWindow(isDev) {
+function waitForPetWindowReady(win) {
+  if (!win.webContents.isLoading()) {
+    return Promise.resolve()
+  }
+  return new Promise((resolve) => {
+    const finish = () => {
+      win.removeListener('ready-to-show', finish)
+      win.webContents.removeListener('did-fail-load', finish)
+      win.removeListener('closed', finish)
+      resolve()
+    }
+    win.once('ready-to-show', finish)
+    win.webContents.once('did-fail-load', finish)
+    win.once('closed', finish)
+  })
+}
+
+/**
+ * 显示桌宠窗口
+ * 新建窗口时页面还没加载完，show() 要等 ready-to-show，否则调用方立刻查 isVisible() 只会拿到 false
+ * @param {boolean} isDev - 是否为开发环境
+ * @returns {Promise<boolean>} 显示后窗口是否可见
+ */
+async function showPetWindow(isDev) {
   if (!petWindow || petWindow.isDestroyed()) {
     createPetWindow(isDev)
-  } else {
-    petWindow.show()
   }
+  const win = petWindow
+  if (!win || win.isDestroyed()) {
+    return false
+  }
+  if (!win.isVisible()) {
+    await waitForPetWindowReady(win)
+    if (!win.isDestroyed()) {
+      win.show()
+    }
+  }
+  return Boolean(isPetWindowVisible())
 }
 
 /**
@@ -166,15 +193,14 @@ function hidePetWindow() {
 /**
  * 切换桌宠显示/隐藏
  * @param {boolean} isDev - 是否为开发环境
+ * @returns {Promise<boolean>} 切换后窗口是否可见
  */
-function togglePetWindow(isDev) {
-  if (!petWindow || petWindow.isDestroyed()) {
-    showPetWindow(isDev)
-  } else if (petWindow.isVisible()) {
+async function togglePetWindow(isDev) {
+  if (petWindow && !petWindow.isDestroyed() && petWindow.isVisible()) {
     hidePetWindow()
-  } else {
-    showPetWindow(isDev)
+    return false
   }
+  return showPetWindow(isDev)
 }
 
 /**
@@ -192,21 +218,21 @@ function isPetWindowVisible() {
  */
 function registerIpcHandlers(ipcMain, isDev) {
   // 显示桌宠
-  ipcMain.handle('show-pet-window', () => {
-    showPetWindow(isDev)
-    return { success: true }
+  ipcMain.handle('show-pet-window', async () => {
+    const visible = await showPetWindow(isDev)
+    return { success: true, visible }
   })
 
   // 隐藏桌宠
   ipcMain.handle('hide-pet-window', () => {
     hidePetWindow()
-    return { success: true }
+    return { success: true, visible: false }
   })
 
   // 切换桌宠显示/隐藏
-  ipcMain.handle('toggle-pet-window', () => {
-    togglePetWindow(isDev)
-    return { success: true, visible: isPetWindowVisible() }
+  ipcMain.handle('toggle-pet-window', async () => {
+    const visible = await togglePetWindow(isDev)
+    return { success: true, visible }
   })
 
   // 检查桌宠是否可见

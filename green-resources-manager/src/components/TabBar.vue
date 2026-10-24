@@ -19,7 +19,7 @@
         </button>
       </div>
     </div>
-    <button class="tab-new" @click="createNewTab" title="新建标签页">
+    <button class="tab-new" @click="createNewTab" :title="$lt('新建标签页')">
       +
     </button>
   </div>
@@ -53,21 +53,19 @@ export default {
     // 监听标签页事件
     if (window.electronAPI.onTabLoaded) {
       window.electronAPI.onTabLoaded((data) => {
-        console.log('标签页已加载:', data)
         this.loadTabs()
       })
     }
 
     if (window.electronAPI.onTabClosed) {
       window.electronAPI.onTabClosed((data) => {
-        console.log('标签页已关闭:', data)
         this.loadTabs()
       })
     }
 
     if (window.electronAPI.onTabActivated) {
       window.electronAPI.onTabActivated(async (data) => {
-        console.log('标签页已激活:', data)
+  
         this.activeTabId = data.tabId
         // 重新加载标签页列表以确保数据是最新的
         await this.loadTabs()
@@ -76,7 +74,6 @@ export default {
 
     if (window.electronAPI.onTabTitleUpdated) {
       window.electronAPI.onTabTitleUpdated((data) => {
-        console.log('标签页标题已更新:', data)
         const tab = this.tabs.find(t => t.id === data.tabId)
         if (tab) {
           tab.title = data.title
@@ -282,31 +279,43 @@ export default {
 }
 
 /* 暗色主题 */
-[data-theme="dark"] .tab-bar {
+[data-theme="dark"] .tab-bar,
+[data-theme="night"] .tab-bar,
+[data-theme="night-ink"] .tab-bar {
   background: #2a2a2a;
   border-bottom-color: #404040;
 }
 
-[data-theme="dark"] .tab-item {
+[data-theme="dark"] .tab-item,
+[data-theme="night"] .tab-item,
+[data-theme="night-ink"] .tab-item {
   background: #353535;
   border-color: #404040;
 }
 
-[data-theme="dark"] .tab-item:hover {
+[data-theme="dark"] .tab-item:hover,
+[data-theme="night"] .tab-item:hover,
+[data-theme="night-ink"] .tab-item:hover {
   background: #404040;
 }
 
-[data-theme="dark"] .tab-item.active {
+[data-theme="dark"] .tab-item.active,
+[data-theme="night"] .tab-item.active,
+[data-theme="night-ink"] .tab-item.active {
   background: #1e1e1e;
   border-bottom-color: #1e1e1e;
 }
 
-[data-theme="dark"] .tab-new {
+[data-theme="dark"] .tab-new,
+[data-theme="night"] .tab-new,
+[data-theme="night-ink"] .tab-new {
   background: #353535;
   border-color: #404040;
 }
 
-[data-theme="dark"] .tab-new:hover {
+[data-theme="dark"] .tab-new:hover,
+[data-theme="night"] .tab-new:hover,
+[data-theme="night-ink"] .tab-new:hover {
   background: #404040;
 }
 </style>

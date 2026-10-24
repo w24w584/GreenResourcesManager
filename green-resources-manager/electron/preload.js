@@ -50,6 +50,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // 伪装图片功能
   readDisguiseImages: () => ipcRenderer.invoke('read-disguise-images'),
+  /** 伪装图片文件夹。不存在时主进程会先创建。 */
+  getDisguiseDirectory: () => ipcRenderer.invoke('get-disguise-directory'),
   getAppRootPath: () => ipcRenderer.invoke('get-app-root-path'),
   
   // 文件选择对话框
@@ -65,12 +67,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   listImageFilesInArchive: (archivePath) => ipcRenderer.invoke('list-image-files-in-archive', archivePath),
   getFolderSize: (filePath) => ipcRenderer.invoke('get-folder-size', filePath),
   checkFileExists: (filePath) => ipcRenderer.invoke('check-file-exists', filePath),
+  computeResourceFingerprint: (filePath, kind) => ipcRenderer.invoke('compute-resource-fingerprint', filePath, kind),
+  findRelocatedResource: (oldPath, fingerprint, allowPageCountOnly) => ipcRenderer.invoke('find-relocated-resource', oldPath, fingerprint, allowPageCountOnly),
   
   // 文件URL处理
   getFileUrl: (filePath) => ipcRenderer.invoke('get-file-url', filePath),
   // 将本地文件读为 data:URL（用于在 http 源下安全显示本地图片）
   readFileAsDataUrl: (filePath) => ipcRenderer.invoke('read-file-as-data-url', filePath),
   openExternal: (filePath) => ipcRenderer.invoke('open-external', filePath),
+  /** 用指定的可执行文件打开一个本地文件，例如用外部阅读器打开 cbr/cbz */
+  openFileWithProgram: (programPath, filePath) => ipcRenderer.invoke('open-file-with-program', programPath, filePath),
   
   // 游戏启动
   launchGame: (executablePath, gameName) => ipcRenderer.invoke('launch-game', executablePath, gameName),
@@ -101,6 +107,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sqliteSavePageResources: (pageId, resources) => ipcRenderer.invoke('sqlite-save-page-resources', pageId, resources),
   // 从数据库删除资源
   sqliteDeleteResource: (tableName, resourceId) => ipcRenderer.invoke('sqlite-delete-resource', tableName, resourceId),
+  // 删除页面名单，资源正文保留
+  sqliteDeletePageData: (pageId) => ipcRenderer.invoke('sqlite-delete-page-data', pageId),
+  // 按文件路径查找已经入库的资源，供别的页面接上同一条记录
+  sqliteFindResourceByPath: (filePath) => ipcRenderer.invoke('sqlite-find-resource-by-path', filePath),
   // 将旧格式 SQL 迁移为 id+jsonData 格式
   sqliteMigrateToJsonFormat: () => ipcRenderer.invoke('sqlite-migrate-to-json-format'),
   // 从 JSON 迁移成就数据到 SQLite
@@ -181,7 +191,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // 写入密码列表到文件
   writeArchivePasswords: (passwords) => ipcRenderer.invoke('write-archive-passwords', passwords),
-  
+
+  // 资源管理器右键「解压到此处」
+  getShellExtractMenu: () => ipcRenderer.invoke('get-shell-extract-menu'),
+  setShellExtractMenu: (enabled) => ipcRenderer.invoke('set-shell-extract-menu', enabled),
+
   // 通知
   showNotification: (title, body) => ipcRenderer.invoke('show-notification', title, body),
   
@@ -191,6 +205,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setScreenshotsDirectory: () => ipcRenderer.invoke('set-screenshots-directory'),
   
   // 存档文件夹功能
+  getSaveLocation: () => ipcRenderer.invoke('get-save-location'),
+  setSaveLocation: (saveDataPath) => ipcRenderer.invoke('set-save-location', saveDataPath),
   getSaveDataDirectory: () => ipcRenderer.invoke('get-save-data-directory'),
   setSaveDataDirectory: () => ipcRenderer.invoke('set-save-data-directory'),
   
@@ -209,6 +225,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // 读取文本文件内容
   readTextFile: (filePath) => ipcRenderer.invoke('read-text-file', filePath),
+  // 只统计小说字数，不把整本书内容传回页面
+  countNovelWords: (filePath) => ipcRenderer.invoke('count-novel-words', filePath),
   
   // 打开文件所在文件夹
   openFileFolder: (filePath) => ipcRenderer.invoke('open-file-folder', filePath),
@@ -253,11 +271,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onUpdateError: (callback) => ipcRenderer.on('update-error', callback),
   
   // 安全键功能
-  setSafetyKey: (enabled, url) => ipcRenderer.invoke('set-safety-key', enabled, url),
+  setSafetyKey: (enabled, url, shortcut) => ipcRenderer.invoke('set-safety-key', enabled, url, shortcut),
   onSafetyKeyTriggered: (callback) => ipcRenderer.on('safety-key-triggered', callback),
   
   // 备份整个存档目录
   backupSaveDataDirectory: (saveDataDir, maxBackups) => ipcRenderer.invoke('backup-save-data-directory', saveDataDir, maxBackups),
+  /** 当前存档的自动备份目录。目录不存在时会先创建。 */
+  getSaveBackupDirectory: () => ipcRenderer.invoke('get-save-backup-directory'),
   
   // 封面管理
   saveCoverToFolder: (sourceImagePath, saveDataDir, resourceType, resourceId) => ipcRenderer.invoke('save-cover-to-folder', sourceImagePath, saveDataDir, resourceType, resourceId),
@@ -290,9 +310,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   tabGetAll: () => ipcRenderer.invoke('tab-get-all'),
   tabNavigate: (tabId, url) => ipcRenderer.invoke('tab-navigate', { tabId, url }),
   // 在新标签页中打开漫画阅读器，传入 path（资源路径）与 title（资源名称）
-  tabOpenComicViewer: (path, title) => ipcRenderer.invoke('tab-open-comic-viewer', { path, title }),
+  tabOpenComicViewer: (path, title, theme) => ipcRenderer.invoke('tab-open-comic-viewer', { path, title, theme }),
   // 在新标签页中打开小说阅读器，传入 path（文件路径）、title（资源名称）与 fileType（txt/pdf/epub）
   tabOpenNovelViewer: (path, title, fileType) => ipcRenderer.invoke('tab-open-novel-viewer', { path, title, fileType }),
+  // 在新标签页中打开视频播放器，传入 path（视频文件路径）与 title（视频名称）
+  tabOpenVideoPlayer: (path, title) => ipcRenderer.invoke('tab-open-video-player', { path, title }),
   
   // 标签页事件监听
   onTabLoaded: (callback) => ipcRenderer.on('tab-loaded', (event, data) => callback(data)),

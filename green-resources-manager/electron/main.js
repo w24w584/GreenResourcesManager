@@ -1,8 +1,81 @@
+/**
+ * 输出管道断开时，往里面写日志会抛出 EPIPE。
+ * Electron 启动之后会换成自己的 stdout，只包启动前那一条没用。
+ * 这里同时包住当前的输出流和 console 方法，日志写失败就丢掉，不要弹出主进程错误框。
+ * @param {import('stream').Writable | null | undefined} stream 标准输出或标准错误
+ */
+function ignoreBrokenPipe(stream) {
+  if (!stream || typeof stream.write !== 'function' || typeof stream.on !== 'function') return
+  /** 当前这层 write 已经包过就跳过；Electron 把 write 换掉之后要重新包。 */
+  if (stream.write.name === 'writeWithoutBrokenPipe') return
+  stream.on('error', (error) => {
+    if (error && error.code === 'EPIPE') return
+  })
+  const originalWrite = stream.write
+  stream.write = function writeWithoutBrokenPipe(chunk, encoding, callback) {
+    try {
+      return originalWrite.call(this, chunk, encoding, callback)
+    } catch (error) {
+      if (error && error.code === 'EPIPE') return true
+      throw error
+    }
+  }
+}
+
+/**
+ * 包住 console 的几种输出。调用时再去包当前的 stdout，避免包到已经被换掉的旧流。
+ */
+function patchConsole() {
+  ignoreBrokenPipe(process.stdout)
+  ignoreBrokenPipe(process.stderr)
+  for (const method of ['log', 'info', 'warn', 'error', 'debug']) {
+    const current = console[method]
+    if (typeof current !== 'function' || current.name === 'patchedConsoleMethod') continue
+    console[method] = function patchedConsoleMethod(...args) {
+      try {
+        return current.apply(console, args)
+      } catch (error) {
+        if (error && error.code === 'EPIPE') return
+        throw error
+      }
+    }
+  }
+}
+
+patchConsole()
+
 const { app, BrowserWindow, dialog, ipcMain, shell, screen, nativeImage, protocol, safeStorage } = require('electron')
+
+/**
+ * Electron 用这个对话框展示主进程里没接住的异常。
+ * 管道断开不属于程序错误，不再弹出来。
+ * @param {string} title 标题
+ * @param {string} content 正文
+ */
+const originalShowErrorBox = dialog.showErrorBox.bind(dialog)
+dialog.showErrorBox = (title, content) => {
+  const text = `${title || ''}\n${content || ''}`
+  if (text.includes('EPIPE') || text.includes('broken pipe')) return
+  originalShowErrorBox(title, content)
+}
+
+process.on('uncaughtException', (error) => {
+  if (error && (error.code === 'EPIPE' || String(error.message || '').includes('broken pipe'))) return
+})
 const { autoUpdater } = require('electron-updater')
 const path = require('path')
 const { spawn } = require('child_process')
 const fs = require('fs')
+const shellExtract = require('./services/shell-extract')
+
+/**
+ * 本次是不是从资源管理器右键拉起来的。
+ * 右键时当前目录是压缩包所在文件夹，要先切回程序目录，否则读不到密码本。
+ */
+const shellExtractPathsAtLaunch = shellExtract.parseExtractPaths(process.argv)
+if (shellExtractPathsAtLaunch.length > 0) {
+  shellExtract.ensureAppWorkingDirectory()
+}
 
 // 引入系统托盘模块
 const systemTray = require('./tray/system-tray')
@@ -76,18 +149,27 @@ if (disableGpu) {
 // 是否启用最小化到托盘功能
 let minimizeToTrayEnabled = true
 
-function createWindow() {
-  // 使用主窗口模块创建窗口
+/**
+ * 创建主窗口。
+ * 右键解压拉起时先不显示，避免一解压就把整个主界面弹出来。
+ * @param {boolean} showWhenReady 页面准备好后是否显示
+ * @returns {import('electron').BrowserWindow}
+ */
+function createWindow(showWhenReady = true) {
   return mainWindowModule.createMainWindow(
     isDev,
     () => minimizeToTrayEnabled,
     () => systemTray.getTray(),
-    (options) => systemTray.displayBalloon(options)
+    (options) => systemTray.displayBalloon(options),
+    { showWhenReady }
   )
 }
 
-// 单实例锁：确保应用只能运行一个实例
-const gotTheLock = app.requestSingleInstanceLock()
+// 单实例锁。右键传来的路径放在附加数据里，不靠命令行开关。
+// 软件已经开着时，系统经常把 -- 开头的参数弄丢，只聚焦窗口、不开始解压。
+const gotTheLock = app.requestSingleInstanceLock({
+  extractPaths: shellExtractPathsAtLaunch
+})
 
 if (!gotTheLock) {
   // 如果获取锁失败，说明已有实例在运行，直接退出
@@ -102,8 +184,19 @@ if (!gotTheLock) {
     console.log('收到 SIGTERM，准备退出应用')
     app.quit()
   })
+  // 右键可能在主进程还没准备好时就连着点了多个文件，先收进队列
+  shellExtract.acceptPaths(shellExtractPathsAtLaunch)
+
   // 监听第二个实例启动的事件
-  app.on('second-instance', (event, commandLine, workingDirectory) => {
+  app.on('second-instance', (event, commandLine, workingDirectory, additionalData) => {
+    const extractPaths = shellExtract.collectExtractPaths(commandLine, additionalData)
+    if (extractPaths.length > 0) {
+      // 已经在运行时，右键只解压，不把主窗口抢到前面
+      console.log('[右键解压] 收到解压请求:', extractPaths)
+      shellExtract.acceptPaths(extractPaths)
+      return
+    }
+
     // 当用户尝试启动第二个实例时，将焦点移到已运行的应用窗口
     console.log('检测到第二个实例启动，将焦点移到已运行的窗口')
     
@@ -121,6 +214,20 @@ if (!gotTheLock) {
   
   // 当 Electron 完成初始化并准备创建浏览器窗口时调用此方法
   app.whenReady().then(() => {
+    patchConsole()
+    shellExtract.registerIpcHandlers(ipcMain, {
+      showMainWindow: () => {
+        const existing = mainWindowModule.getMainWindow()
+        if (!existing || existing.isDestroyed()) createWindow(true)
+        else mainWindowModule.showAndFocusMainWindow()
+      }
+    })
+    // 右键解压不依赖页面加载，准备好就先开始，免得干等主界面
+    shellExtract.startQueue()
+    shellExtract.refreshInstalledMenu().catch((error) => {
+      console.error('[右键解压] 更新右键命令失败:', error)
+    })
+
     // 注册 archive 协议，用于 CBZ 漫画包内图片（archive:///path/to/file.cbz#entryName）
     const AdmZip = require('adm-zip')
     protocol.interceptBufferProtocol('archive', (request, callback) => {
@@ -151,7 +258,8 @@ if (!gotTheLock) {
       }
     })
 
-    createWindow()
+    // 右键解压时主窗口先藏起来，进度显示在单独的小窗里
+    createWindow(shellExtractPathsAtLaunch.length === 0)
     appMenu.createMenu(() => mainWindowModule.getMainWindow())
     
     // 获取主窗口实例
@@ -255,6 +363,12 @@ if (!gotTheLock) {
     
     // 从数据库删除资源
     ipcMain.handle('sqlite-delete-resource', (event, tableName, resourceId) => sqlite.deleteResourceFromTable(tableName, resourceId))
+
+    // 删除页面及其资源数据
+    ipcMain.handle('sqlite-delete-page-data', (event, pageId) => sqlite.deletePageData(pageId))
+
+    // 按路径查找已有资源，多个页面可以共用同一条
+    ipcMain.handle('sqlite-find-resource-by-path', (event, filePath) => sqlite.findResourceByPath(filePath))
     
     // 将旧格式 SQL（多列）迁移为 id+jsonData 格式
     ipcMain.handle('sqlite-migrate-to-json-format', () => sqlite.migrateOldSqlToJsonFormat())

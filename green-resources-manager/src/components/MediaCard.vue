@@ -32,21 +32,26 @@
       <!-- 左上角标识容器（文件丢失 + 压缩包） -->
       <div v-if="showFileError || showArchiveIcon" class="top-left-indicators">
         <!-- 文件不存在错误图标 -->
-        <div v-if="showFileError" class="file-error-icon" title="本地文件不存在">
+        <div v-if="showFileError" class="file-error-icon" :title="$lt('本地文件不存在')">
           ⚠️
         </div>
         <!-- 压缩包标识 -->
-        <div v-if="showArchiveIcon" class="archive-icon" title="压缩包文件">
+        <div v-if="showArchiveIcon" class="archive-icon" :title="$lt('压缩包文件')">
           📦
         </div>
       </div>
       <!-- 文件夹标识 -->
-      <div v-if="type === 'folder'" class="folder-indicator" title="文件夹">
+      <div v-if="type === 'folder'" class="folder-indicator" :title="$lt('文件夹')">
         📁
       </div>
-      <!-- 收藏标识 -->
-      <div v-if="itemIsFavorite && !isMultiSelectMode" class="favorite-indicator" title="已收藏">
-        ⭐
+      <!-- 右上角：完成标记和收藏。完成标记跟压缩包那些状态标一样常驻，收藏在多选时让开。 -->
+      <div v-if="showTopRightMarks" class="top-right-indicators">
+        <div v-if="itemIsFinished" class="finished-indicator" :title="$lt(finishedMarkTitle)">
+          ✓
+        </div>
+        <div v-if="itemIsFavorite && !isMultiSelectMode" class="favorite-indicator" :title="$lt('已收藏')">
+          ⭐
+        </div>
       </div>
       <div class="media-overlay" v-if="showActionButton && !isMultiSelectMode">
         <div class="action-button" @click.stop="$emit('action', item)">
@@ -107,7 +112,7 @@
       <!-- 特殊项（如演员列表等） -->
       <template v-for="specialItem in cardSpecialItems" :key="specialItem.field">
         <div class="media-actors" v-if="getSpecialItemValue(specialItem) && scale >= 50">
-          <span class="actors-label">{{ specialItem.label }}</span>
+          <span class="actors-label">{{ $lt(specialItem.label) }}</span>
           <span class="actors-list">{{ formatSpecialItem(specialItem) }}</span>
         </div>
       </template>
@@ -130,14 +135,13 @@
             class="stat-item" 
             :class="{ 'running-status': stat.showRunningStatus && isRunning }"
           >
-            <span v-if="stat.label" class="stat-label">{{ stat.label }}</span>
+            <span v-if="stat.label" class="stat-label">{{ $lt(stat.label) }}</span>
             <span v-if="stat.showRunningStatus && isRunning" class="running-info">
               <span class="running-indicator">
                 <span class="running-icon">▶️</span>
-                <span class="running-text">运行中</span>
+                <span class="running-text">{{ $lt('运行中') }}</span>
               </span>
-              <span class="session-time" v-if="sessionDuration > 0">
-                本次: {{ formatPlayTime(sessionDuration) }}
+              <span class="session-time" v-if="sessionDuration > 0"> {{ $lt('本次:') }} {{ formatPlayTime(sessionDuration) }}
               </span>
             </span>
             <span v-else>{{ stat.rendered }}</span>
@@ -150,6 +154,7 @@
 
 <script>
 import { formatPlayTime, formatLastPlayed, formatDuration, formatVideoDuration } from '../utils/formatters'
+import { lf, lt } from '../locales/lt'
 import { useGameRunningStore } from '../stores/game-running'
 import disguiseManager from '../utils/DisguiseManager'
 import { isDisguiseModeEnabled } from '../utils/disguiseMode'
@@ -204,11 +209,24 @@ function getDisplayTexts(item) {
   // 通过 item.constructor 获取运行时的实际构造函数
   // 这样可以绕过 TypeScript 的编译时类型检查，实现真正的运行时多态
   if (item && item.constructor && typeof item.constructor.getDisplayTexts === 'function') {
-    // 直接调用构造函数上的静态方法（运行时类型）
-    return item.constructor.getDisplayTexts()
+    return localizeDisplayTexts(item.constructor.getDisplayTexts())
   }
-  // 否则返回默认配置
-  return BaseResources.getDisplayTexts()
+  return localizeDisplayTexts(BaseResources.getDisplayTexts())
+}
+
+/**
+ * 把资源类里写死的简体状态文案换成当前语言。
+ * 只翻译配置里的固定句子，不翻译用户填的名称。
+ * @param {Record<string, string>} texts 资源类提供的显示文案
+ * @returns {Record<string, string>} 当前语言的文案
+ */
+function localizeDisplayTexts(texts) {
+  const localized = {}
+  Object.keys(texts || {}).forEach((key) => {
+    const value = texts[key]
+    localized[key] = typeof value === 'string' ? lt(value) : value
+  })
+  return localized
 }
 
 /**
@@ -705,6 +723,31 @@ export default {
     itemIsFavorite() {
       return getFieldValue(this.item.isFavorite)
     },
+    /**
+     * 这条资源是否已经标记完成。
+     */
+    itemIsFinished() {
+      return getFieldValue(this.item?.finished) === true
+    },
+    /**
+     * 右上角是否要显示标记。
+     * 完成标记在多选时也留着；只有收藏、又正在多选时，这一角留空。
+     */
+    showTopRightMarks() {
+      return this.itemIsFinished || (this.itemIsFavorite && !this.isMultiSelectMode)
+    },
+    /**
+     * 完成标记悬停时的说法。
+     * 和详情页按钮用同一套动词：游戏是玩完，小说是读完，音频是听完。
+     */
+    finishedMarkTitle() {
+      const kind = String(this.type || '').toLowerCase()
+      if (kind === 'game') return '已玩完'
+      if (kind === 'novel') return '已读完'
+      if (kind === 'audio') return '已听完'
+      if (kind === 'software' || kind === 'other' || kind === 'file') return '已完成'
+      return '已看完'
+    },
     itemDeveloper() {
       return getFieldValue(this.item.developer)
     },
@@ -752,7 +795,7 @@ export default {
         const displayItems = value.slice(0, maxItems)
         let result = displayItems.join(join)
         if (value.length > maxItems) {
-          result += `等${value.length}人`
+          result += lf('等{count}人', { count: value.length })
         }
         return result
       }
@@ -766,18 +809,30 @@ export default {
       if (!dateString) return texts.neverAccessed
       return formatLastPlayed(dateString, texts)
     },
+    /**
+     * 卡片上的阅读状态。
+     * 打开小说只会计下最后阅读时间，时长经常还是 0。时长为 0 不能写成未阅读，否则读过的书也会显示没读。
+     * @param {number} minutes - 累计阅读分钟数
+     * @returns {string}
+     */
+    formatReadStatus(minutes) {
+      if (minutes) return this.formatReadTime(minutes)
+      const lastRead = getNestedFieldValue(this.item, 'lastRead')
+      if (lastRead) return lt('已阅读')
+      return lt('未阅读')
+    },
     formatReadTime(minutes) {
-      if (!minutes) return '未阅读'
+      if (!minutes) return lt('未阅读')
       if (minutes < 60) {
-        return `${minutes} 分钟`
+        return lf('{minutes} 分钟', { minutes })
       } else if (minutes < 1440) {
         const hours = Math.floor(minutes / 60)
         const mins = minutes % 60
-        return `${hours} 小时 ${mins} 分钟`
+        return lf('{hours} 小时 {mins} 分钟', { hours, mins })
       } else {
         const days = Math.floor(minutes / 1440)
         const hours = Math.floor((minutes % 1440) / 60)
-        return `${days} 天 ${hours} 小时`
+        return lf('{days} 天 {hours} 小时', { days, hours })
       }
     },
     formatLastRead(dateString) {
@@ -792,41 +847,31 @@ export default {
       
       if (diffDays === 0) {
         if (diffMinutes < 1) return texts.justAccessed
-        if (diffMinutes < 60) return `${diffMinutes}分钟前`
-        if (diffHours < 24) return `${diffHours}小时前`
+        if (diffMinutes < 60) return lf('{n}分钟前', { n: diffMinutes })
+        if (diffHours < 24) return lf('{n}小时前', { n: diffHours })
       }
       
       if (diffDays === 1) return texts.yesterdayAccessed
-      if (diffDays < 7) return `${diffDays}天前`
-      if (diffDays < 30) return `${Math.floor(diffDays / 7)}周前`
+      if (diffDays < 7) return lf('{n}天前', { n: diffDays })
+      if (diffDays < 30) return lf('{n}周前', { n: Math.floor(diffDays / 7) })
       return this.formatDateTime(date)
     },
     formatViewCount(count) {
-      if (!count || count === 0) return '未浏览'
-      return `已浏览 ${count} 次`
+      if (!count || count === 0) return lt('未浏览')
+      return lf('已浏览 {count} 次', { count })
     },
     formatLastViewed(dateString) {
-      const texts = getDisplayTexts(this.item)
-      if (!dateString) return texts.neverAccessed
-      const date = new Date(dateString)
-      const now = new Date()
-      const diffTime = Math.abs(now - date)
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
-      const diffHours = Math.floor(diffTime / (1000 * 60 * 60))
-      const diffMinutes = Math.floor(diffTime / (1000 * 60))
-      
-      if (diffDays === 0) {
-        if (diffMinutes < 1) return `刚刚${texts.accessAction}`
-        if (diffMinutes < 60) return `${diffMinutes}分钟前${texts.accessAction}`
-        if (diffHours < 24) return `${diffHours}小时前${texts.accessAction}`
-      }
-      
-      if (diffDays === 1) return `昨天${texts.accessAction}`
-      if (diffDays < 7) return `${diffDays}天前${texts.accessAction}`
-      if (diffDays < 30) return `${Math.floor(diffDays / 7)}周前${texts.accessAction}`
-      return this.formatDateTime(date)
+      return this.formatRelativeAccess(dateString)
     },
     formatLastWatched(dateString) {
+      return this.formatRelativeAccess(dateString)
+    },
+    /**
+     * 把最近一次查看或观看时间说成相对时间，并带上这类资源自己的动作，例如「分钟前观看」。
+     * @param {string} dateString 时间字符串
+     * @returns {string} 当前语言的相对时间
+     */
+    formatRelativeAccess(dateString) {
       const texts = getDisplayTexts(this.item)
       if (!dateString) return texts.neverAccessed
       const date = new Date(dateString)
@@ -835,16 +880,17 @@ export default {
       const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
       const diffHours = Math.floor(diffTime / (1000 * 60 * 60))
       const diffMinutes = Math.floor(diffTime / (1000 * 60))
+      const action = texts.accessAction || ''
       
       if (diffDays === 0) {
-        if (diffMinutes < 1) return `刚刚${texts.accessAction}`
-        if (diffMinutes < 60) return `${diffMinutes}分钟前${texts.accessAction}`
-        if (diffHours < 24) return `${diffHours}小时前${texts.accessAction}`
+        if (diffMinutes < 1) return lf('刚刚{action}', { action })
+        if (diffMinutes < 60) return lf('{n}分钟前{action}', { n: diffMinutes, action })
+        if (diffHours < 24) return lf('{n}小时前{action}', { n: diffHours, action })
       }
       
-      if (diffDays === 1) return `昨天${texts.accessAction}`
-      if (diffDays < 7) return `${diffDays}天前${texts.accessAction}`
-      if (diffDays < 30) return `${Math.floor(diffDays / 7)}周前${texts.accessAction}`
+      if (diffDays === 1) return lf('昨天{action}', { action })
+      if (diffDays < 7) return lf('{n}天前{action}', { n: diffDays, action })
+      if (diffDays < 30) return lf('{n}周前{action}', { n: Math.floor(diffDays / 7), action })
       return this.formatDateTime(date)
     },
     formatAddedDate(dateString) {
@@ -855,12 +901,12 @@ export default {
       const diffTime = Math.abs(now.getTime() - date.getTime())
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
       
-      if (diffDays === 0) return '今天'
-      if (diffDays === 1) return '昨天'
-      if (diffDays < 7) return `${diffDays}天前`
-      if (diffDays < 30) return `${Math.ceil(diffDays / 7)}周前`
-      if (diffDays < 365) return `${Math.ceil(diffDays / 30)}个月前`
-      return `${Math.ceil(diffDays / 365)}年前`
+      if (diffDays === 0) return lt('今天')
+      if (diffDays === 1) return lt('昨天')
+      if (diffDays < 7) return lf('{n}天前', { n: diffDays })
+      if (diffDays < 30) return lf('{n}周前', { n: Math.ceil(diffDays / 7) })
+      if (diffDays < 365) return lf('{n}个月前', { n: Math.ceil(diffDays / 30) })
+      return lf('{n}年前', { n: Math.ceil(diffDays / 365) })
     },
     formatDuration(minutes) {
       return formatVideoDuration(minutes, '未知时长')
@@ -877,20 +923,20 @@ export default {
       return `${year}-${month}-${day} ${hours}:${minutes}`
     },
     formatWordCount(wordCount) {
-      if (!wordCount || wordCount === 0) return '未知字数'
+      if (!wordCount || wordCount === 0) return lt('未知字数')
       
       if (wordCount < 1000) {
-        return `${wordCount} 字`
+        return lf('{n} 字', { n: wordCount })
       } else if (wordCount < 10000) {
-        return `${(wordCount / 1000).toFixed(1)} 千字`
+        return lf('{n} 千字', { n: (wordCount / 1000).toFixed(1) })
       } else if (wordCount < 100000) {
-        return `${(wordCount / 10000).toFixed(1)} 万字`
+        return lf('{n} 万字', { n: (wordCount / 10000).toFixed(1) })
       } else {
-        return `${(wordCount / 10000).toFixed(0)} 万字`
+        return lf('{n} 万字', { n: (wordCount / 10000).toFixed(0) })
       }
     },
     formatFolderSize(sizeInBytes) {
-      if (!sizeInBytes || sizeInBytes === 0) return '未知大小'
+      if (!sizeInBytes || sizeInBytes === 0) return lt('未知大小')
       
       const units = ['B', 'KB', 'MB', 'GB', 'TB']
       let size = sizeInBytes
@@ -1013,11 +1059,8 @@ export default {
       if (!imagePath || (typeof imagePath === 'string' && imagePath.trim() === '')) {
         return this.getDefaultImage()
       }
-      
-      // 对于图片类型，如果文件不存在，直接返回默认图片（感叹号会通过 showFileError 显示）
-      if (this.type === 'image' && this.fileExists === false) {
-        return this.getDefaultImage()
-      }
+
+      // 资源文件丢了只在角标上提示。封面如果已经复制进存档，这里仍然去读那张图，不因为 fileExists 为 false 就换成默认图标。
       
       // 检查是否启用伪装模式（对所有类型有效）
       // 依赖 disguiseModeState 以确保响应式更新
@@ -1205,8 +1248,10 @@ export default {
     /**
      * 更新伪装模式状态
      */
-    updateDisguiseModeState() {
-      const newState = isDisguiseModeEnabled()
+    updateDisguiseModeState(event) {
+      const newState = typeof event?.detail?.enabled === 'boolean'
+        ? event.detail.enabled
+        : isDisguiseModeEnabled()
       if (this.disguiseModeState !== newState) {
         //console.log('MediaCard: 伪装模式状态变化:', this.disguiseModeState, '->', newState)
         this.disguiseModeState = newState
@@ -1435,7 +1480,9 @@ $running-color-dark: #10b981;
   padding: 0 !important; /* 覆盖 fun-card 的默认 padding */
 }
 
-[data-theme="dark"] .media-card {
+[data-theme="dark"] .media-card,
+[data-theme="night"] .media-card,
+[data-theme="night-ink"] .media-card {
   background-color: $card-bg-dark;
 }
 
@@ -1495,23 +1542,33 @@ $running-color-dark: #10b981;
 }
 
 /* 深色主题下的评分背景色调整 */
-[data-theme="dark"] .media-card.rating-border-5 {
+[data-theme="dark"] .media-card.rating-border-5,
+[data-theme="night"] .media-card.rating-border-5,
+[data-theme="night-ink"] .media-card.rating-border-5 {
   background-color: rgba(255, 215, 0, 0.12); /* 深色主题下稍微明显一点 */
 }
 
-[data-theme="dark"] .media-card.rating-border-4 {
+[data-theme="dark"] .media-card.rating-border-4,
+[data-theme="night"] .media-card.rating-border-4,
+[data-theme="night-ink"] .media-card.rating-border-4 {
   background-color: rgba(157, 78, 221, 0.12);
 }
 
-[data-theme="dark"] .media-card.rating-border-3 {
+[data-theme="dark"] .media-card.rating-border-3,
+[data-theme="night"] .media-card.rating-border-3,
+[data-theme="night-ink"] .media-card.rating-border-3 {
   background-color: rgba(239, 68, 68, 0.12);
 }
 
-[data-theme="dark"] .media-card.rating-border-2 {
+[data-theme="dark"] .media-card.rating-border-2,
+[data-theme="night"] .media-card.rating-border-2,
+[data-theme="night-ink"] .media-card.rating-border-2 {
   background-color: rgba(16, 185, 129, 0.12);
 }
 
-[data-theme="dark"] .media-card.rating-border-1 {
+[data-theme="dark"] .media-card.rating-border-1,
+[data-theme="night"] .media-card.rating-border-1,
+[data-theme="night-ink"] .media-card.rating-border-1 {
   background-color: rgba(59, 130, 246, 0.12);
 }
 
@@ -1547,23 +1604,33 @@ $running-color-dark: #10b981;
 }
 
 /* 深色主题下的 hover 背景色 */
-[data-theme="dark"] .media-card.rating-border-5:hover {
+[data-theme="dark"] .media-card.rating-border-5:hover,
+[data-theme="night"] .media-card.rating-border-5:hover,
+[data-theme="night-ink"] .media-card.rating-border-5:hover {
   background-color: rgba(255, 215, 0, 0.18);
 }
 
-[data-theme="dark"] .media-card.rating-border-4:hover {
+[data-theme="dark"] .media-card.rating-border-4:hover,
+[data-theme="night"] .media-card.rating-border-4:hover,
+[data-theme="night-ink"] .media-card.rating-border-4:hover {
   background-color: rgba(157, 78, 221, 0.18);
 }
 
-[data-theme="dark"] .media-card.rating-border-3:hover {
+[data-theme="dark"] .media-card.rating-border-3:hover,
+[data-theme="night"] .media-card.rating-border-3:hover,
+[data-theme="night-ink"] .media-card.rating-border-3:hover {
   background-color: rgba(239, 68, 68, 0.18);
 }
 
-[data-theme="dark"] .media-card.rating-border-2:hover {
+[data-theme="dark"] .media-card.rating-border-2:hover,
+[data-theme="night"] .media-card.rating-border-2:hover,
+[data-theme="night-ink"] .media-card.rating-border-2:hover {
   background-color: rgba(16, 185, 129, 0.18);
 }
 
-[data-theme="dark"] .media-card.rating-border-1:hover {
+[data-theme="dark"] .media-card.rating-border-1:hover,
+[data-theme="night"] .media-card.rating-border-1:hover,
+[data-theme="night-ink"] .media-card.rating-border-1:hover {
   background-color: rgba(59, 130, 246, 0.18);
 }
 
@@ -1627,7 +1694,7 @@ $running-color-dark: #10b981;
 
 .action-button {
   background: var(--accent-color);
-  color: white;
+  color: var(--text-on-accent, #1a1a1a);
   width: 60px;
   height: 60px;
   border-radius: 50%;
@@ -1856,10 +1923,33 @@ $running-color-dark: #10b981;
   box-shadow: 0 2px 8px rgba(0, 0, 0, $shadow-opacity);
 }
 
-.favorite-indicator {
+.top-right-indicators {
   position: absolute;
   top: calc(8px * var(--card-scale, 1));
   right: calc(8px * var(--card-scale, 1));
+  display: flex;
+  gap: calc(6px * var(--card-scale, 1));
+  z-index: 10;
+  align-items: center;
+}
+
+.finished-indicator {
+  background: #15803d;
+  color: #f0fdf4;
+  border-radius: 50%;
+  width: calc(28px * var(--card-scale, 1));
+  height: calc(28px * var(--card-scale, 1));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(15px * var(--card-scale, 1));
+  font-weight: 700;
+  backdrop-filter: blur($backdrop-blur-small);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, $shadow-opacity);
+}
+
+.favorite-indicator {
   background: rgba(251, 191, 36, $indicator-bg-opacity);
   color: white;
   border-radius: 50%;
@@ -1887,7 +1977,9 @@ $running-color-dark: #10b981;
   }
 }
 
-[data-theme="dark"] .running-status {
+[data-theme="dark"] .running-status,
+[data-theme="night"] .running-status,
+[data-theme="night-ink"] .running-status {
   color: $running-color-dark !important;
 }
 

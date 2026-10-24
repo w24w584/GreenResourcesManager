@@ -74,6 +74,24 @@ export class Novel extends BaseResources {
 		defaultValue: []
 	})
 
+	/** 全书字数。0 表示还没统计过，进入小说页后会自动算。 */
+	totalWords: ResourceField<number> = new ResourceField<number>({
+		saveable: true,
+		defaultValue: 0
+	})
+
+	/** 阅读进度，0 到 100。 */
+	readProgress: ResourceField<number> = new ResourceField<number>({
+		saveable: true,
+		defaultValue: 0
+	})
+
+	/** 累计阅读时长，单位是分钟。0 表示还没有时长，不代表没打开过。 */
+	readTime: ResourceField<number> = new ResourceField<number>({
+		saveable: true,
+		defaultValue: 0
+	})
+
 	get lastRead(): string | null {
 		const arr = this.visitedSessions.value
 		return Array.isArray(arr) && arr.length > 0 ? arr[arr.length - 1] : null
@@ -91,6 +109,7 @@ export class Novel extends BaseResources {
 	getSaveData(): any {
 		return {
 			id: this.id.value || this.id.defaultValue || '',
+			fingerprint: this.fingerprint.value || '',
 			resourceType: this.resourceType.value || this.resourceType.defaultValue || 'novel',
 			name: this.name.value || '',
 			description: this.description.value || '',
@@ -104,10 +123,15 @@ export class Novel extends BaseResources {
 			coverPath: this.coverPath.value || '',
 			publishYear: this.publishYear.value || '',
 			visitedSessions: Array.isArray(this.visitedSessions.value) ? [...this.visitedSessions.value] : [],
+			totalWords: Number(this.totalWords.value) || 0,
+			readProgress: Number(this.readProgress.value) || 0,
+			readTime: Number(this.readTime.value) || 0,
 			addedDate: this.addedDate.value || '',
 			rating: this.rating.value || 0,
 			comment: this.comment.value || '',
-			isFavorite: this.isFavorite.value || false
+			isFavorite: this.isFavorite.value || false,
+			finished: this.finished.value === true,
+			finishedAt: this.finished.value === true ? (this.finishedAt.value || '') : ''
 		}
 	}
 
@@ -176,7 +200,7 @@ export class Novel extends BaseResources {
 				type: 'time' as const,
 				field: 'readTime',
 				label: '',
-				formatter: 'formatReadTime'
+				formatter: 'formatReadStatus'
 			},
 			{
 				type: 'date' as const,

@@ -15,7 +15,7 @@
             @click="selectCategory(category.id)"
           >
             <span class="nav-icon">{{ category.icon }}</span>
-            <span class="nav-label">{{ $t(`settings.categories.${category.id}`) }}</span>
+            <span class="nav-label">{{ category.unlocalized ? category.name : $t(`settings.categories.${category.id}`) }}</span>
           </div>
         </nav>
       </div>
@@ -36,6 +36,9 @@
             @theme-changed="onThemeChanged"
             @action="handleGeneralAction"
           />
+
+          <!-- 语言页不翻译。看不懂当前界面的人要靠这一页自己认出来。 -->
+          <LanguageSettings v-if="currentCategory === 'language'" />
 
           <!-- 个性化设置 -->
           <PersonalizationSettings 
@@ -144,6 +147,7 @@ import ArchiveSettings from '../components/settings/ArchiveSettings.vue'
 import PetSettings from '../components/settings/PetSettings.vue'
 import PersonalizationSettings from '../components/settings/PersonalizationSettings.vue'
 import PageManagementSettings from '../components/settings/PageManagementSettings.vue'
+import LanguageSettings from '../components/settings/LanguageSettings.vue'
 import AISettings from '../components/settings/AISettings.vue'
 
 export default {
@@ -161,6 +165,7 @@ export default {
     PetSettings,
     PersonalizationSettings,
     PageManagementSettings,
+    LanguageSettings,
     AISettings
   },
   setup() {
@@ -172,9 +177,17 @@ export default {
       currentCategory: 'general',
       settingsCategories: [
         { id: 'general', name: '通用', icon: '⚙️', description: '应用的基本设置和外观配置' },
+        // 紧挨在通用下面。name 和 description 中英并列，故意不进语言包。
+        {
+          id: 'language',
+          name: 'Language / 语言',
+          icon: '🌐',
+          description: '看懂下面哪一句，就选哪一句。 If you can read one of these, choose it.',
+          unlocalized: true
+        },
         { id: 'personalization', name: '个性化', icon: '🎨', description: '个性化外观和主题设置' },
         { id: 'ai', name: 'AI 设置', icon: 'AI', description: '配置 AI 服务商和本地密钥' },
-        { id: 'pageManagement', name: '页面管理', icon: '🧩', description: '添加/编辑/排序/隐藏自定义页面' },
+        { id: 'pageManagement', name: '页面管理', icon: '🧩', description: '添加、编辑、排序或删除页面' },
         { id: 'games', name: '游戏', icon: '🎮', description: '游戏相关的设置选项' },
         { id: 'images', name: '图片', icon: '🖼️', description: '图片管理和显示设置' },
         { id: 'videos', name: '视频', icon: '🎬', description: '视频播放和管理设置' },
@@ -226,6 +239,8 @@ export default {
         novelTextColor: '#333333',
         novelWordsPerPage: 1000,
         novelShowProgress: true,
+        // 网站默认仍用系统浏览器。选「软件新标签页」后才在应用内打开。
+        websiteOpenMode: 'external',
         // 分页设置
         image: {
           listPageSize: 20,
@@ -236,7 +251,8 @@ export default {
           preloadCount: 3,
           hardwareAcceleration: true,
           renderQuality: 'high',
-          detailPageSize: 50
+          detailPageSize: 50,
+          comicArchiveProgramPath: ''
         },
         video: {
           listPageSize: 20
@@ -256,6 +272,8 @@ export default {
       },
       // 自动保存相关
       autoSaveTimer: null,
+      /** 漫画页选好指定程序后，用来把路径写回当前设置。卸掉页面时要拿同一个函数取消监听。 */
+      comicArchiveProgramListener: null as ((event: Event) => void) | null,
       isAutoSaving: false,
       lastSaveTime: null,
       // 初始化标志，避免在初始化时触发watcher
@@ -294,14 +312,42 @@ export default {
       this.currentCategory = categoryId
     },
     
+    /**
+     * 当前分类的标题。
+     * 语言页的标题写死，避免被翻成用户看不懂的字。
+     */
     getCurrentCategoryName() {
+      const category = this.settingsCategories.find(item => item.id === this.currentCategory)
+      if (category?.unlocalized) {
+        return category.name
+      }
       return this.t(`settings.categories.${this.currentCategory}`)
     },
-    
+
+    /**
+     * 当前分类的说明。语言页同样不走翻译。
+     */
     getCurrentCategoryDescription() {
+      const category = this.settingsCategories.find(item => item.id === this.currentCategory)
+      if (category?.unlocalized) {
+        return category.description
+      }
       return this.t(`settings.descriptions.${this.currentCategory}`)
     },
     
+    /**
+     * 漫画页当场选了指定程序时，把路径写进当前设置。
+     * 设置页如果正开着，自动保存会按内存里的图片设置整份重写，不接住这次选择就会把路径冲掉。
+     * @param event 路径放在 detail 里
+     */
+    handleComicArchiveProgramSelected(event: Event) {
+      const programPath = (event as CustomEvent<string>).detail || ''
+      if (!this.settings.image) {
+        this.settings.image = {}
+      }
+      this.settings.image.comicArchiveProgramPath = programPath
+    },
+
     // 处理设置更新事件（来自子组件）
     handleSettingUpdate({ key, value }: { key: string; value: any }) {
       console.log('[SettingsView] handleSettingUpdate 被调用', {
@@ -407,7 +453,8 @@ export default {
           preloadCount: this.settings.image?.preloadCount || 3,
           hardwareAcceleration: this.settings.image?.hardwareAcceleration !== undefined ? this.settings.image.hardwareAcceleration : true,
           renderQuality: this.settings.image?.renderQuality || 'high',
-          detailPageSize: parseInt(this.settings.image?.detailPageSize) || 50
+          detailPageSize: parseInt(this.settings.image?.detailPageSize) || 50,
+          comicArchiveProgramPath: this.settings.image?.comicArchiveProgramPath || ''
         }
         
         // 构建video对象
@@ -554,6 +601,8 @@ export default {
             novelTextColor: '#333333',
             novelWordsPerPage: 1000,
             novelShowProgress: true,
+            // 网站设置。external 用系统浏览器，internal 在软件里新开标签页。
+            websiteOpenMode: 'external',
             // 分页设置
             image: {
               listPageSize: 20,
@@ -564,7 +613,8 @@ export default {
               preloadCount: 3,
               hardwareAcceleration: true,
               renderQuality: 'high',
-              detailPageSize: 50
+              detailPageSize: 50,
+              comicArchiveProgramPath: ''
             },
             video: {
               listPageSize: 20
@@ -752,21 +802,9 @@ export default {
     async openSaveDataFolder() {
       try {
         if (window.electronAPI && window.electronAPI.openFolder) {
-          // 获取存档文件夹路径
-          let saveDataPath = ''
-          
-          if (this.settings.saveDataLocation === 'default') {
-            // 使用默认路径
-            saveDataPath = 'SaveData'
-          } else if (this.settings.saveDataLocation === 'custom') {
-            // 使用自定义路径
-            saveDataPath = this.settings.saveDataPath
-          }
-          
-          // 如果自定义路径为空，回退到默认路径
-          if (!saveDataPath || saveDataPath.trim() === '') {
-            saveDataPath = 'SaveData'
-          }
+          const saveDataPath = window.electronAPI.getSaveDataDirectory
+            ? await window.electronAPI.getSaveDataDirectory()
+            : 'SaveData'
           
           console.log('尝试打开存档文件夹:', saveDataPath)
           
@@ -792,10 +830,7 @@ export default {
           }
         } else {
           // 降级处理：在浏览器中显示路径信息
-          const saveDataPath = this.settings.saveDataLocation === 'default' 
-            ? 'SaveData' 
-            : (this.settings.saveDataPath || 'SaveData')
-          this.showToastNotification(`存档文件夹路径: ${saveDataPath}\n\n在浏览器环境中无法直接打开文件夹，请手动导航到该路径`)
+          this.showToastNotification('存档文件夹路径: SaveData\n\n在浏览器环境中无法直接打开文件夹，请手动导航到该路径')
         }
       } catch (error) {
         console.error('打开存档文件夹失败:', error)
@@ -942,6 +977,10 @@ export default {
     }
   },
   async mounted() {
+    this.comicArchiveProgramListener = (event: Event) => {
+      this.handleComicArchiveProgramSelected(event)
+    }
+    window.addEventListener('comic-archive-program-selected', this.comicArchiveProgramListener)
     try {
       // 先初始化存档设置的默认值，确保UI可以立即显示
       if (!this.settings.saveDataLocation) {
@@ -984,7 +1023,8 @@ export default {
                 preloadCount: this.settings.image.preloadCount || 3,
                 hardwareAcceleration: this.settings.image.hardwareAcceleration !== undefined ? this.settings.image.hardwareAcceleration : true,
                 renderQuality: this.settings.image.renderQuality || 'high',
-                detailPageSize: parseInt(this.settings.image.detailPageSize) || 50
+                detailPageSize: parseInt(this.settings.image.detailPageSize) || 50,
+                comicArchiveProgramPath: this.settings.image.comicArchiveProgramPath || ''
               }
             } else {
               // 如果没有image对象，创建默认的
@@ -997,7 +1037,8 @@ export default {
                 preloadCount: 3,
                 hardwareAcceleration: true,
                 renderQuality: 'high',
-                detailPageSize: 50
+                detailPageSize: 50,
+                comicArchiveProgramPath: ''
               }
             }
             
@@ -1072,6 +1113,10 @@ export default {
             if (this.settings.novelShowProgress === undefined) {
               this.settings.novelShowProgress = true
             }
+            // 旧存档没有这一项时，继续用系统浏览器，避免升级后网站忽然改在软件里打开。
+            if (this.settings.websiteOpenMode !== 'internal' && this.settings.websiteOpenMode !== 'external') {
+              this.settings.websiteOpenMode = 'external'
+            }
             
             // 初始化安全键设置（如果未设置）
             if (this.settings.safetyKeyEnabled === undefined || this.settings.safetyKeyEnabled === null) {
@@ -1084,44 +1129,6 @@ export default {
             // 加载设置后立即应用主题
             if (this.settings.theme) {
               this.applyTheme(this.settings.theme)
-            }
-            
-            // 初始化存档设置（如果未设置）
-            if (!this.settings.saveDataLocation) {
-              this.settings.saveDataLocation = 'default'
-            }
-            
-            // 如果使用自定义目录但没有设置路径，尝试获取（后台异步，不阻塞UI）
-            if (this.settings.saveDataLocation === 'custom' && !this.settings.saveDataPath) {
-              try {
-                if (window.electronAPI && window.electronAPI.getSaveDataDirectory) {
-                  const path = await window.electronAPI.getSaveDataDirectory()
-                  if (path) {
-                    this.settings.saveDataPath = path
-                  }
-                }
-              } catch (error) {
-                console.error('获取默认存档目录失败:', error)
-              }
-            }
-            
-            // 根据设置更新SaveManager的数据目录
-            try {
-              let saveDataPath = ''
-              if (this.settings.saveDataLocation === 'default') {
-                saveDataPath = 'SaveData' // 默认根目录下的SaveData
-              } else if (this.settings.saveDataLocation === 'custom' && this.settings.saveDataPath) {
-                saveDataPath = this.settings.saveDataPath + '/SaveData' // 自定义目录下的SaveData
-              }
-              
-              if (saveDataPath) {
-                const saveManagerUpdated = saveManager.setDataDirectory(saveDataPath)
-                if (saveManagerUpdated) {
-                  console.log('SaveManager数据目录已设置为:', saveDataPath)
-                }
-              }
-            } catch (error) {
-              console.error('设置SaveManager数据目录失败:', error)
             }
             
             // 初始化自动备份设置（如果未设置）
@@ -1228,6 +1235,10 @@ export default {
   },
   
   beforeUnmount() {
+    if (this.comicArchiveProgramListener) {
+      window.removeEventListener('comic-archive-program-selected', this.comicArchiveProgramListener)
+      this.comicArchiveProgramListener = null
+    }
     // 清理定时器
     if (this.autoSaveTimer) {
       clearTimeout(this.autoSaveTimer)
@@ -1459,7 +1470,7 @@ export default {
 
 .btn-test-notification {
   background: var(--accent-color);
-  color: white;
+  color: var(--text-on-accent, #1a1a1a);
   border: none;
   padding: 8px 16px;
   border-radius: 6px;
@@ -1666,7 +1677,7 @@ export default {
 .path-button {
   padding: 8px 16px;
   background: var(--accent-color);
-  color: white;
+  color: var(--text-on-accent, #1a1a1a);
   border: none;
   border-radius: 6px;
   cursor: pointer;
@@ -1681,7 +1692,7 @@ export default {
 .btn-browse {
   padding: 8px 16px;
   background: var(--accent-color);
-  color: white;
+  color: var(--text-on-accent, #1a1a1a);
   border: none;
   border-radius: 6px;
   cursor: pointer;
@@ -1859,7 +1870,7 @@ input:checked + .toggle-slider:before {
 
 .btn-primary {
   background: var(--accent-color);
-  color: white;
+  color: var(--text-on-accent, #1a1a1a);
 }
 
 .btn-primary:hover:not(:disabled) {

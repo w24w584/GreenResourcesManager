@@ -14,15 +14,15 @@
         <div class="achievement-stats">
           <div class="stat-item">
             <div class="stat-number">{{ unlockedAchievements }}</div>
-            <div class="stat-label">已解锁</div>
+            <div class="stat-label">{{ $lt('已解锁') }}</div>
           </div>
           <div class="stat-item">
             <div class="stat-number">{{ totalAchievements }}</div>
-            <div class="stat-label">总成就</div>
+            <div class="stat-label">{{ $lt('总成就') }}</div>
           </div>
           <div class="stat-item">
             <div class="stat-number">{{ achievementProgress }}%</div>
-            <div class="stat-label">完成度</div>
+            <div class="stat-label">{{ $lt('完成度') }}</div>
           </div>
         </div>
 
@@ -611,7 +611,7 @@ export default {
 .test-button {
   padding: 8px 16px;
   background: var(--accent-color);
-  color: white;
+  color: var(--text-on-accent, #1a1a1a);
   border: none;
   border-radius: 6px;
   font-size: 0.9rem;

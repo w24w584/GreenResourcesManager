@@ -69,6 +69,10 @@ declare global {
       compressFile: (sourcePath: string, archivePath: string) => Promise<{ success: boolean; archivePath?: string; message?: string; error?: string }>
       readArchivePasswords: () => Promise<{ success: boolean; passwords?: string[]; filePath?: string; fileCreated?: boolean; error?: string }>
       writeArchivePasswords: (passwords: string[] | string) => Promise<{ success: boolean; filePath?: string; error?: string }>
+      /** 资源管理器右键菜单现在是否指向本程序 */
+      getShellExtractMenu: () => Promise<{ success: boolean; supported: boolean; enabled: boolean; stale: boolean; error?: string }>
+      /** 添加或移除资源管理器右键里的「解压到此处」 */
+      setShellExtractMenu: (enabled: boolean) => Promise<{ success: boolean; enabled: boolean; error?: string }>
       
       // 窗口控制
       minimizeWindow: () => Promise<any>
@@ -88,7 +92,7 @@ declare global {
       zoomIn: () => Promise<void>
       zoomOut: () => Promise<void>
       resetZoom: () => Promise<void>
-      onAppZoomChanged: (callback: (data: { zoomLevel: number }) => void) => () => void
+      onAppZoomChanged: (callback: (data: { zoomLevel: number; zoomFactor?: number }) => void) => () => void
       
       // 文件操作
       selectExecutableFile: () => Promise<string | null>
@@ -104,12 +108,20 @@ declare global {
       
       // 文件系统操作
       checkFileExists: (filePath: string) => Promise<{ success: boolean; exists?: boolean; error?: string }>
+      /** 按资源类型计算内容指纹，用来认出改名或移动后的同一个资源 */
+      computeResourceFingerprint: (filePath: string, kind: 'names' | 'pages' | 'size') => Promise<{ success: boolean; fingerprint?: string; error?: string }>
+      /** 在原路径的父目录里查找指纹相同的新位置 */
+      findRelocatedResource: (oldPath: string, fingerprint: string, allowPageCountOnly?: boolean) => Promise<{ success: boolean; newPath?: string | null; ambiguous?: boolean; error?: string }>
       ensureDirectory: (dirPath: string) => Promise<{ success: boolean; error?: string }>
       getFolderSize: (filePath: string) => Promise<{ success: boolean; size?: number; error?: string }>
       openFileFolder: (filePath: string) => Promise<{ success: boolean; folderPath?: string; error?: string }>
       openFolder: (filePath: string) => Promise<{ success: boolean; error?: string }>
+      /** 伪装图片所在文件夹。目录不存在时会先创建。 */
+      getDisguiseDirectory: () => Promise<{ success: boolean; directory?: string; error?: string }>
       renameFolder: (oldPath: string, newPath: string) => Promise<{ success: boolean; error?: string }>
       openExternal: (urlOrPath: string) => Promise<{ success: boolean; error?: string }>
+      /** 用指定程序打开本地文件。programPath 是 exe，filePath 是要交给它的文件 */
+      openFileWithProgram: (programPath: string, filePath: string) => Promise<{ success: boolean; error?: string }>
       getFileIcon: (filePath: string, size?: number) => Promise<{ success: boolean; icon?: string; error?: string }>
       
       // JSON 文件操作
@@ -117,6 +129,8 @@ declare global {
       readJsonFile: (filePath: string) => Promise<{ success: boolean; data?: any; error?: string }>
       // 备份整个存档目录
       backupSaveDataDirectory: (saveDataDir: string, maxBackups?: number) => Promise<{ success: boolean; backupPath?: string; backupNumber?: number; copiedFiles?: number; copiedFolders?: number; error?: string }>
+      /** 当前存档的自动备份目录。目录不存在时会先创建。 */
+      getSaveBackupDirectory: () => Promise<string>
       deleteFile: (filePath: string) => Promise<{ success: boolean; error?: string }>
       deleteDirectory: (dirPath: string) => Promise<{ success: boolean; error?: string }>
       
@@ -135,6 +149,8 @@ declare global {
       
       // 文本文件操作
       readTextFile: (filePath: string) => Promise<{ success: boolean; content?: string; fileSize?: number; wordCount?: number; encoding?: string; error?: string }>
+      /** 统计 txt、md、epub 的字数，不返回正文 */
+      countNovelWords: (filePath: string) => Promise<{ success: boolean; wordCount?: number; error?: string }>
       
       // 游戏启动
       launchGame: (executablePath: string, gameName?: string) => Promise<{ success: boolean; pid?: number; windowTitles?: string[]; error?: string }>
@@ -147,6 +163,7 @@ declare global {
       showNotification: (title: string, body: string) => Promise<void>
       takeScreenshot: (directory?: string, format?: string, quality?: number, runningGamesInfo?: Record<string, { id: string; pid: number; windowTitles?: string[]; gameName?: string | null; startTime?: number }>) => Promise<{ success: boolean; filepath?: string; filename?: string; windowName?: string; gameFolder?: string; screenshotsDir?: string; matchedGame?: string | null; gameId?: string | null; error?: string }>
       updateGlobalShortcut: (newKey: string) => Promise<{ success: boolean; key?: string; error?: string }>
+      setSafetyKey: (enabled: boolean, url: string, shortcut?: string) => Promise<{ success: boolean; error?: string }>
       checkGlobalShortcutAvailable: (key: string) => Promise<{ success: boolean; available?: boolean; error?: string }>
       
       // 截图目录管理
@@ -154,6 +171,8 @@ declare global {
       setScreenshotsDirectory: () => Promise<string | null>
       
       // 存档目录管理
+      getSaveLocation: () => Promise<{ saveDataPath: string }>
+      setSaveLocation: (saveDataPath: string) => Promise<{ success: boolean; directory?: string }>
       getSaveDataDirectory: () => Promise<string>
       setSaveDataDirectory: () => Promise<{ success: boolean; directory?: string; message?: string; copiedFiles?: number; error?: string } | null>
       
@@ -163,6 +182,13 @@ declare global {
       
       // 视频播放
       openVideoWindow: (filePath: string, options?: any) => Promise<{ success: boolean; error?: string }>
+      /** 在主窗口新标签页中打开视频播放器 */
+      tabOpenVideoPlayer: (filePath: string, title?: string) => Promise<{ success: boolean; tabId?: string; error?: string }>
+      /**
+       * 新建标签页。
+       * external 为 true 时按外部网站打开：不注入应用权限，只接受 http 或 https。
+       */
+      tabCreate: (options?: { url?: string; title?: string; external?: boolean }) => Promise<{ success: boolean; tabId?: string; url?: string; error?: string }>
       
       // 开机自启
       setAutoStart: (enabled: boolean) => Promise<{ success: boolean; enabled?: boolean; error?: string }>
@@ -197,8 +223,8 @@ declare global {
       removeAllListeners: (channel: string) => void
       
       // 桌宠功能
-      showPetWindow: () => Promise<{ success: boolean }>
-      hidePetWindow: () => Promise<{ success: boolean }>
+      showPetWindow: () => Promise<{ success: boolean; visible?: boolean }>
+      hidePetWindow: () => Promise<{ success: boolean; visible?: boolean }>
       togglePetWindow: () => Promise<{ success: boolean; visible?: boolean }>
       isPetWindowVisible: () => Promise<{ visible: boolean }>
       getPetWindowPosition: () => Promise<{ success: boolean; x?: number; y?: number; error?: string }>
@@ -217,6 +243,8 @@ declare global {
       sqliteGetAllTablesData: () => Promise<{ ok: boolean; tables?: Array<{ tableName: string; rows: Array<any> }>; message?: string }>
       sqliteGetPageData: (pageId: string) => Promise<{ ok: boolean; data?: Array<any>; message?: string }>
       sqliteDeleteResource: (tableName: string, resourceId: string) => Promise<{ ok: boolean; message?: string }>
+      sqliteDeletePageData: (pageId: string) => Promise<{ ok: boolean; message?: string }>
+      sqliteFindResourceByPath: (filePath: string) => Promise<{ ok: boolean; resource?: any; tableName?: string; message?: string }>
       sqliteSaveResource: (resourceType: string, resource: any) => Promise<{ ok: boolean; message?: string }>
       sqliteAddResourceToPage: (pageId: string, resourceType: string, resourceId: string) => Promise<{ ok: boolean; message?: string }>
       sqliteSavePageResources: (pageId: string, resources: Array<any>) => Promise<{ ok: boolean; message?: string }>

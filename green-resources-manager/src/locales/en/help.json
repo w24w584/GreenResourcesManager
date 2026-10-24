@@ -6,5 +6,30 @@
     "features": "Features",
     "faq": "FAQ",
     "shortcuts": "Shortcuts"
+  },
+  "sidebar": {
+    "title": "📚 Help Center",
+    "expandMenu": "Expand menu",
+    "collapseMenu": "Collapse menu",
+    "userManual": "User manual",
+    "apiManual": "API manual",
+    "intro": "Introduction",
+    "general": "General",
+    "pages": "Pages and resources",
+    "resources": "Resources",
+    "faq": "FAQ",
+    "apiGames": "Games",
+    "apiManga": "Manga",
+    "apiVideos": "Videos",
+    "apiNovels": "Novels",
+    "apiWebsites": "Websites",
+    "apiAudio": "Audio",
+    "workshop": "Workshop manual",
+    "workshopPages": "Custom pages",
+    "workshopPlugin": "Custom features",
+    "workshopNote": "Notes plugin",
+    "workshopCalendar": "Calendar plugin",
+    "support": "Support and feedback",
+    "about": "About"
   }
 }

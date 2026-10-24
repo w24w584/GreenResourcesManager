@@ -6,6 +6,7 @@
 const path = require('path')
 const fs = require('fs')
 const tagIndex = require('./tagIndex')
+const { resolveSaveDataDirectory } = require('../utils/save-location')
 
 // 资源表名列表（使用 id + jsonData + timestamp + version 存储）
 const RESOURCE_TABLES = [
@@ -14,49 +15,11 @@ const RESOURCE_TABLES = [
 ]
 
 /**
- * 获取 SaveData 目录路径（考虑自定义路径）
+ * 获取真正的存档目录。位置只从项目根目录的记录里读。
  * @returns {string} SaveData 目录路径
  */
 function getSaveDataDirectory() {
-  try {
-    // 先尝试从设置文件读取自定义路径
-    const defaultSaveDataPath = path.join(process.cwd(), 'SaveData')
-    const settingsPath = path.join(defaultSaveDataPath, 'Settings', 'settings.json')
-
-    if (fs.existsSync(settingsPath)) {
-      try {
-        const settingsData = fs.readFileSync(settingsPath, 'utf8')
-        const settings = JSON.parse(settingsData)
-
-        if (settings.settings && settings.settings.saveDataLocation === 'custom' && settings.settings.saveDataPath) {
-          // 使用自定义路径
-          const customPath = path.join(settings.settings.saveDataPath, 'SaveData')
-          // 检查自定义路径是否存在或能否创建
-          try {
-            if (!fs.existsSync(settings.settings.saveDataPath)) {
-              console.warn('[SQLite] 自定义存档目录不存在:', settings.settings.saveDataPath)
-              console.warn('[SQLite] 回退到默认路径')
-              return defaultSaveDataPath
-            }
-            console.log('[SQLite] 使用自定义 SaveData 路径:', customPath)
-            return customPath
-          } catch (pathError) {
-            console.warn('[SQLite] 检查自定义路径失败，使用默认路径:', pathError)
-          }
-        }
-      } catch (error) {
-        console.warn('[SQLite] 读取设置文件失败，使用默认路径:', error)
-      }
-    }
-
-    // 使用默认路径
-    console.log('[SQLite] 使用默认 SaveData 路径:', defaultSaveDataPath)
-    return defaultSaveDataPath
-  } catch (error) {
-    console.error('[SQLite] 获取 SaveData 路径失败:', error)
-    // 降级到默认路径
-    return path.join(process.cwd(), 'SaveData')
-  }
+  return resolveSaveDataDirectory()
 }
 
 /**
@@ -829,8 +792,7 @@ async function savePageResources(pageId, resources) {
       // 1. 保存所有资源到对应的资源表（如果有资源的话）
       if (resources.length > 0) {
         for (const resource of resources) {
-          console.log(`[SQLite] 处理资源，resource:`, resource)
-          
+    
           if (!resource.id) {
             console.warn(`[SQLite] 资源缺少 id 字段，跳过保存:`, resource)
             continue
@@ -838,8 +800,6 @@ async function savePageResources(pageId, resources) {
 
           // 从资源数据中获取资源类型
           let resourceType = resource.resourceType || resource.resource_type
-
-          console.log(`[SQLite] 资源原始类型 - resourceType: ${resourceType}, resource.resourceType: ${resource.resourceType}, resource.resource_type: ${resource.resource_type}`)
 
           // 如果资源类型不存在，尝试从页面ID推断
           if (!resourceType) {
@@ -849,8 +809,6 @@ async function savePageResources(pageId, resources) {
 
           // 映射到数据库表名
           const tableName = mapResourceTypeToTableName(resourceType)
-          console.log(`[SQLite] 保存资源到表 ${tableName}, resourceType: ${resourceType}, id: ${resource.id}`)
-
           // 保存映射关系
           resourceTableMap.set(resource.id, tableName)
 
@@ -869,7 +827,6 @@ async function savePageResources(pageId, resources) {
           const insertStmt = db.prepare(`INSERT OR REPLACE INTO "${tableName}" (id, jsonData, timestamp, version) VALUES (?, ?, ?, ?)`)
           insertStmt.run(resource.id, JSON.stringify(resource), timestamp, version)
           insertedCount++
-          console.log(`[SQLite] 资源保存成功，insertedCount 现在为: ${insertedCount}`)
 
           // 标签索引：同一事务内增量同步
           if (logicalType) {
@@ -918,8 +875,6 @@ async function savePageResources(pageId, resources) {
           // 生成唯一ID
           const id = `${Date.now()}_${i}_${Math.random().toString(36).substr(2, 9)}`
 
-          console.log(`[SQLite] 添加页面索引: ${quotedTableName}, resourceType: ${dbTableName}, resourceId: ${resourceId}`)
-
           // 插入页面索引
           const insertPageStmt = db.prepare(`
             INSERT INTO ${quotedTableName} (id, resourceType, resourceId) 
@@ -928,8 +883,6 @@ async function savePageResources(pageId, resources) {
           insertPageStmt.run(id, dbTableName, resourceId)
         }
       }
-
-      console.log(`[SQLite] 页面 ${pageId} 资源保存完成，共 ${resources.length} 条记录`)
     })
 
     transaction()
@@ -1248,7 +1201,6 @@ async function saveSettingsToSqlite(settings) {
     )
 
     db.close()
-    console.log('[SQLite] 设置数据保存成功')
     return { ok: true }
   } catch (error) {
     console.error('[SQLite] 保存设置数据失败:', error)
@@ -1403,12 +1355,117 @@ async function saveUserToSqlite(user) {
     )
 
     db.close()
-    console.log('[SQLite] 用户数据保存成功')
-    return { ok: true }
   } catch (error) {
     console.error('[SQLite] 保存用户数据失败:', error)
     return { ok: false, message: error.message }
   }
+
+  console.log('[SQLite] 用户数据保存成功')
+  return { ok: true }
 }
 
-module.exports = { getAllTablesData, getPageData, getTableResources, getResourceById, getSaveDataDirectory, getDatabasePath, saveResourceToTable, addResourceToPage, savePageResources, deleteResourceFromTable, migrateOldSqlToJsonFormat, migrateAchievementsFromJson, migrateSettingsFromJson, getSettingsFromSqlite, saveSettingsToSqlite, migrateUserFromJson, getUserFromSqlite, saveUserToSqlite }
+/**
+ * 把路径收成同一套写法，方便判断是不是同一个文件。
+ * Windows 上大小写和斜杠不同仍算同一条路径。
+ * @param {unknown} filePath
+ * @returns {string}
+ */
+function normalizeResourcePath(filePath) {
+  if (typeof filePath !== 'string' || !filePath.trim()) return ''
+  return filePath.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase()
+}
+
+/**
+ * 在所有资源正文表里按路径找已经保存过的资源。
+ * 页面只存索引。同一个文件再拖进别的页面时，用这条记录接回去，而不是新建一份。
+ * @param {string} filePath
+ * @returns {Promise<{ ok: boolean, resource?: any, tableName?: string, message?: string }>}
+ */
+async function findResourceByPath(filePath) {
+  const target = normalizeResourcePath(filePath)
+  if (!target) return { ok: true, resource: null }
+
+  try {
+    const Database = require('better-sqlite3')
+    const db = new Database(getDatabasePath())
+    ensureResourceTablesExist(db)
+    try {
+      for (const tableName of RESOURCE_TABLES) {
+        const exists = db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`).get(tableName)
+        if (!exists) continue
+        const rows = db.prepare(`SELECT id, jsonData FROM "${tableName}"`).all()
+        for (const row of rows) {
+          let data
+          try {
+            data = JSON.parse(row.jsonData)
+          } catch {
+            continue
+          }
+          const candidates = [data.resourcePath, data.executablePath, data.filePath, data.folderPath]
+          const matched = candidates.some(candidate => normalizeResourcePath(candidate) === target)
+          if (!matched) continue
+          if (!data.id) data.id = row.id
+          return { ok: true, tableName, resource: data }
+        }
+      }
+      return { ok: true, resource: null }
+    } finally {
+      db.close()
+    }
+  } catch (err) {
+    console.error('[SQLite] 按路径查找资源失败:', err.message)
+    return { ok: false, message: err.message }
+  }
+}
+
+/**
+ * 删掉页面的名单表。
+ * 资源正文留在原来的表里。别的页面还指着它就继续用；之后把同一个文件拖进新页面，会接回这一条。
+ * @param {string} pageId - 页面 ID
+ * @returns {Promise<{ ok: boolean, message?: string }>}
+ */
+async function deletePageData(pageId) {
+  if (!pageId || typeof pageId !== 'string' || !/^[A-Za-z0-9_-]+$/.test(pageId)) {
+    return { ok: false, message: '页面 ID 不合法' }
+  }
+
+  try {
+    const Database = require('better-sqlite3')
+    const dbPath = getDatabasePath()
+    const db = new Database(dbPath)
+
+    const tableName = `${pageId.replace(/-/g, '_')}_page`
+    const deleteTx = db.transaction(() => {
+      const exists = db.prepare(`
+        SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?
+      `).get(tableName)
+
+      if (exists) {
+        db.exec(`DROP TABLE IF EXISTS "${tableName}"`)
+      }
+
+      const pagesTable = db.prepare(`
+        SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'pages'
+      `).get()
+      if (pagesTable) {
+        db.prepare('DELETE FROM pages WHERE id = ?').run(pageId)
+      }
+    })
+
+    deleteTx()
+    db.close()
+
+    const pageJsonPath = path.join(getSaveDataDirectory(), 'pages', `${pageId}.json`)
+    if (fs.existsSync(pageJsonPath)) {
+      fs.unlinkSync(pageJsonPath)
+    }
+
+    console.log(`[SQLite] 已删除页面 ${pageId} 的名单，资源正文仍保留`)
+    return { ok: true }
+  } catch (err) {
+    console.error(`[SQLite] 删除页面 ${pageId} 数据失败:`, err.message)
+    return { ok: false, message: err.message }
+  }
+}
+
+module.exports = { getAllTablesData, getPageData, getTableResources, getResourceById, getSaveDataDirectory, getDatabasePath, saveResourceToTable, addResourceToPage, savePageResources, deleteResourceFromTable, deletePageData, findResourceByPath, migrateOldSqlToJsonFormat, migrateAchievementsFromJson, migrateSettingsFromJson, getSettingsFromSqlite, saveSettingsToSqlite, migrateUserFromJson, getUserFromSqlite, saveUserToSqlite }

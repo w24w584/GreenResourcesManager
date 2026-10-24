@@ -17,8 +17,8 @@
 
 const fs = require('fs')
 const path = require('path')
-const { spawn } = require('child_process')
 const { shell } = require('electron')
+const { isImageFile } = require('../utils/image-file')
 
 /**
  * 注册与媒体相关的 IPC 处理器。
@@ -68,13 +68,10 @@ function registerIpcHandlers(ipcMain, shell, pathUtils) {
       }
 
 
-      // 在 Windows 上，使用 explorer 命令确保正确定位文件夹
-      if (process.platform === 'win32') {
-        spawn('explorer', [absolutePath], { detached: true, stdio: 'ignore' })
-        console.log('使用 explorer 打开文件夹:', absolutePath)
-      } else {
-        // 在其他平台上使用 shell.openPath
-        await shell.openPath(absolutePath)
+      // 交给系统默认文件管理器打开，用户使用第三方管理器时也能生效
+      const openError = await shell.openPath(absolutePath)
+      if (openError) {
+        return { success: false, error: openError }
       }
 
       return { success: true }
@@ -128,13 +125,56 @@ function registerIpcHandlers(ipcMain, shell, pathUtils) {
     }
   })
 
+  /**
+   * 找到存放伪装图片的 disguise 文件夹。
+   * 开发时它在项目根目录；打包后会放在程序旁边。优先用已经放了图片的那一个，
+   * 避免当前工作目录是空文件夹时，把项目里准备好的图片漏掉。
+   * @returns {string} disguise 文件夹路径
+   */
+  function resolveDisguiseDirectory() {
+    const { app } = require('electron')
+    /** 可能放着 disguise 文件夹的位置，按常见启动方式排列。 */
+    const candidates = [
+      path.join(process.cwd(), 'disguise'),
+      path.join(app.getAppPath(), 'disguise'),
+      path.join(path.dirname(app.getPath('exe')), 'disguise')
+    ]
+    const withImages = candidates.find((dir) => {
+      if (!fs.existsSync(dir)) return false
+      try {
+        return fs.readdirSync(dir, { withFileTypes: true }).some(
+          (entry) => entry.isFile() && isImageFile(path.join(dir, entry.name))
+        )
+      } catch (error) {
+        return false
+      }
+    })
+    if (withImages) return withImages
+    const existing = candidates.find((dir) => fs.existsSync(dir))
+    return existing || candidates[0]
+  }
+
+  /**
+   * 返回伪装图片文件夹，不存在就先创建。
+   * 设置页用它打开资源管理器，和读取封面用的是同一个目录。
+   */
+  ipcMain.handle('get-disguise-directory', async () => {
+    try {
+      const disguiseDir = resolveDisguiseDirectory()
+      if (!fs.existsSync(disguiseDir)) {
+        fs.mkdirSync(disguiseDir, { recursive: true })
+      }
+      return { success: true, directory: disguiseDir }
+    } catch (error) {
+      console.error('获取伪装图片文件夹失败:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
   // 专门用于读取伪装图片的 API
   ipcMain.handle('read-disguise-images', async () => {
     try {
-
-
-      // 使用根目录下的 disguise 文件夹
-      const disguiseDir = path.join(process.cwd(), 'disguise')
+      const disguiseDir = resolveDisguiseDirectory()
 
       // 检查目录是否存在，如果不存在则创建
       if (!fs.existsSync(disguiseDir)) {
@@ -148,17 +188,11 @@ function registerIpcHandlers(ipcMain, shell, pathUtils) {
         }
       }
 
-      // 读取目录内容
-      const files = fs.readdirSync(disguiseDir)
-
-      // 过滤出图片文件
-      const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg']
-      const imageFiles = files.filter(file => {
-        const ext = path.extname(file).toLowerCase()
-        const isImage = imageExtensions.includes(ext)
-        console.log(`文件 ${file} 扩展名: ${ext}, 是否为图片: ${isImage}`)
-        return isImage
-      })
+      // 读取目录内容，按文件头筛选真实图片，避免改过后缀的文件被误判
+      const entries = fs.readdirSync(disguiseDir, { withFileTypes: true })
+      const imageFiles = entries
+        .filter((entry) => entry.isFile() && isImageFile(path.join(disguiseDir, entry.name)))
+        .map((entry) => entry.name)
 
 
       // 尝试读取 disguise.txt 文件

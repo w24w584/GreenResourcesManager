@@ -26,7 +26,7 @@
           class="tag-list-section"
         >
           <div class="tag-list-title">
-            <span>{{ field.label }}</span>
+            <span>{{ $lt(field.label) }}</span>
             <span class="tag-count-badge">{{ getFilteredAvailableTagsForField(field).length }}</span>
           </div>
           <div v-if="getFilteredAvailableTagsForField(field).length > 0" class="tag-list">
@@ -72,12 +72,8 @@
 
         <div v-else class="tag-empty-state">
           <p>{{ emptyMessage || '暂无可用标签' }}</p>
-          <p v-if="availableTags && availableTags.length === 0" class="debug-info" style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 8px;">
-            调试：availableTags 为空数组
-          </p>
-          <p v-else-if="!availableTags" class="debug-info" style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 8px;">
-            调试：availableTags 未定义
-          </p>
+          <p v-if="availableTags && availableTags.length === 0" class="debug-info" style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 8px;"> {{ $lt('调试：availableTags 为空数组') }} </p>
+          <p v-else-if="!availableTags" class="debug-info" style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 8px;"> {{ $lt('调试：availableTags 未定义') }} </p>
         </div>
       </template>
     </div>
@@ -329,7 +325,7 @@ export default {
 
 .tag-item-selected {
   background: var(--accent-color);
-  color: white;
+  color: var(--text-on-accent, #1a1a1a);
   border-color: var(--accent-color);
 }
 

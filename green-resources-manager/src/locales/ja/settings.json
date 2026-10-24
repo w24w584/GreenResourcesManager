@@ -47,6 +47,18 @@
     "chinese": "中国古風",
     "forest": "森のテーマ",
     "ocean": "海のテーマ",
+    "cream": "クリーム",
+    "sky": "晴空",
+    "ink": "墨白",
+    "moss": "苔",
+    "sand": "暖砂",
+    "dusk": "暮霞",
+    "dunhuang": "敦煌",
+    "morandi": "モランディ",
+    "matisse": "マティス",
+    "memphis": "メンフィス",
+    "night": "夜航",
+    "night-ink": "夜墨",
     "auto": "システムに従う"
   },
   "autoStart": {
@@ -59,13 +71,18 @@
   },
   "disguiseMode": {
     "title": "偽装モード",
-    "description": "有効にすると、画像カバーがdisguiseフォルダの画像にランダムに置き換えられ、プライバシーを保護"
+    "description": "有効にすると、画像カバーがdisguiseフォルダの画像にランダムに置き換えられ、プライバシーを保護",
+    "openFolderTitle": "偽装画像フォルダを開く",
+    "openFolderDesc": "偽装画像と disguise.txt を置くフォルダを開きます",
+    "openFolderButton": "フォルダを開く",
+    "openedDetail": "偽装画像フォルダを開きました: {path}",
+    "openFolderFailed": "偽装画像フォルダが見つかりません"
   },
   "safetyKey": {
     "title": "セーフティキー",
     "description": "ESCキーを押すと素早く最小化してセーフティウェブページを開く",
     "shortcutTitle": "セーフティキーショートカット",
-    "shortcutDesc": "カスタムセーフティキーショートカットを入力（例: Esc, Ctrl+Q）",
+    "shortcutDesc": "クリックしてから希望のキーを押してください（例: Esc, Ctrl+Q）",
     "urlTitle": "セーフティウェブページURL",
     "urlDesc": "ESCキーを押した時に開くウェブページのURL"
   },
@@ -90,13 +107,17 @@
   },
   "autoBackup": {
     "title": "自動バックアップを有効化",
-    "description": "有効にすると、システムは指定された間隔でセーブディレクトリ全体を自動的にバックアップ",
+    "description": "設定した間隔でセーブ全体をバックアップします。バックアップはシステムユーザーフォルダ（Windows では通常 C ドライブ）に置き、セーブとは分けて保存します",
     "intervalTitle": "自動バックアップ間隔",
     "intervalDesc": "セーブ全体の自動バックアップの時間間隔を設定",
     "unitMinutes": "分",
     "maxCountTitle": "バックアップ保持数",
     "maxCountDesc": "自動バックアップ時に保持するバックアップ数を設定、この数を超えた古いバックアップは自動的に削除",
-    "unitCount": "個"
+    "unitCount": "個",
+    "openFolderTitle": "バックアップフォルダを開く",
+    "openFolderDesc": "自動バックアップの保存先をエクスプローラーで開く",
+    "openFolderButton": "フォルダを開く",
+    "openedDetail": "バックアップフォルダを開きました: {path}"
   },
   "personalization": {
     "customAppTitle": "カスタムアプリタイトル",
@@ -123,7 +144,7 @@
   },
   "general": {
     "safetyKeyShortcut": "セーフティキーショートカット",
-    "safetyKeyShortcutDesc": "カスタムセーフティキーショートカットを入力（例: Esc, Ctrl+Q）",
+    "safetyKeyShortcutDesc": "クリックしてから希望のキーを押してください（例: Esc, Ctrl+Q）",
     "safetyKeyUrl": "セーフティウェブページURL",
     "safetyKeyUrlDesc": "ESCキーを押した時に開くウェブページのURL",
     "safetyKeyUrlPlaceholder": "ウェブページURLを入力",
@@ -151,7 +172,7 @@
     "safetyKeyEnabledSuccess": "セーフティキーグローバルショートカットが有効になりました",
     "safetyKeyDisabledSuccess": "セーフティキーグローバルショートカットが無効になりました",
     "safetyKeyFailed": "セーフティキー設定に失敗しました",
-    "safetyKeyFailedDetail": "ESCグローバルショートカットを登録できません、他のアプリケーションで使用されている可能性があります",
+    "safetyKeyFailedDetail": "このショートカットを登録できません。他のアプリで使用されている可能性があります",
     "showWindowShortcutUpdated": "ショートカット設定が更新されました",
     "showWindowShortcutEnabled": "ウィンドウ表示ショートカット機能が有効になりました",
     "showWindowShortcutDisabled": "ウィンドウ表示ショートカット機能が無効になりました",

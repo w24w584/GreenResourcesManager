@@ -1,6 +1,6 @@
 <template>
   <div id="app">
-    <!-- 应用缩放提示（菜单/快捷键改变整体缩放时显示） -->
+    <!-- 应用缩放提示（菜单、快捷键或 Ctrl+滚轮改变整体缩放时显示） -->
     <div v-if="appZoomHintVisible" class="app-zoom-hint" role="status" aria-live="polite">
       {{ $t('app.zoomTo') }} {{ appZoomHintPercent }}%
     </div>
@@ -62,7 +62,7 @@
                 @click="navigateTo(page.id)"
               >
                 <span class="nav-icon">{{ page.icon }}</span>
-                <span class="nav-text">{{ page.name }}</span>
+                <span class="nav-text">{{ $lt(page.name) }}</span>
               </div>
             </li>
           </ul>
@@ -124,7 +124,7 @@
             @click="navigateTo('tag-manage')"
           >
             <span class="nav-icon">{{ viewConfig['tag-manage']?.icon || '🏷️' }}</span>
-            <span class="nav-text">标签管理</span>
+            <span class="nav-text">{{ $lt('标签管理') }}</span>
           </div>
         </li>
 
@@ -162,7 +162,7 @@
       <!-- 底部按钮 -->
       <div class="nav-footer">
         <div v-for="viewId in footerViews" :key="viewId" 
-          :class="['nav-item', `${viewId}-item`, { active: $route.name === viewId }]" 
+          :class="['nav-item', `${viewId}-item`, { active: isViewActive(viewId) }]" 
           @click="navigateTo(viewId)">
           <span class="nav-icon">{{ viewConfig[viewId]?.icon || '' }}</span>
           <span class="nav-text">{{ $t('views.' + viewId + '.name') }}</span>
@@ -185,8 +185,19 @@
       <template v-if="activeTabIsHome">
         <!-- 标题和简介 -->
         <header class="content-header">
-          <h2>{{ getCurrentViewTitle() }}</h2>
-          <p>{{ getCurrentViewDescription() }}</p>
+          <div class="content-header__text">
+            <h2>{{ getCurrentViewTitle() }}</h2>
+            <p>{{ getCurrentViewDescription() }}</p>
+          </div>
+          <button
+            v-if="currentPageConfig"
+            type="button"
+            class="page-config-button"
+            :title="$lt('管理当前页面的名称、接受的资源和筛选器')"
+            @click="openCurrentPageConfig"
+          >
+            {{ $lt('页面配置') }}
+          </button>
         </header>
 
         <div class="content-body" :class="{ 'with-filter': showFilterSidebar }">
@@ -214,6 +225,7 @@
           <!-- 正常路由视图 -->
           <router-view 
             v-else
+            :key="routerViewKey"
             ref="routerView"
             @filter-data-updated="updateFilterData"
             @navigate="navigateTo"
@@ -226,6 +238,14 @@
       <!-- 全局音频播放器 -->
       <GlobalAudioPlayer @audio-started="onAudioStarted" @playlist-ended="onPlaylistEnded" />
     </main>
+
+    <!-- 当前资源页的配置。和设置里的页面编辑是同一个窗口，只是从这一页直接打开。 -->
+    <PageConfigEditor
+      :visible="showPageConfigEditor"
+      :page-id="configuringPageId"
+      @close="showPageConfigEditor = false"
+      @save="handleCurrentPageConfigSaved"
+    />
 
     <!-- 全局通知组件 -->
     <fun-notification ref="toastNotification" />
@@ -269,12 +289,16 @@ import { updateDynamicRoutes } from './router/index'
 
 
 import notificationService from './utils/NotificationService.ts'
+import { lf, lt } from './locales/lt'
+import { GITHUB_REPO } from './utils/constants'
 import alertService from './utils/AlertService.ts'
 import confirmService from './utils/ConfirmService.ts'
 
 import saveManager from './utils/SaveManager.ts'
+import { setDisguiseModeEnabled } from './utils/disguiseMode'
 // ✨ 使用新的配置管理器（基于配置文件，无需存档）
 import pageConfigManager from './utils/PageConfigManager.ts'
+import PageConfigEditor from './components/PageConfigEditor.vue'
 import pluginManager from './utils/PluginManager.ts'
 import pluginNavigationManager from './utils/PluginNavigationManager.ts'
 import { unlockAchievement } from './pages/user/AchievementView.vue'
@@ -288,7 +312,8 @@ export default {
     TabBar,
     FunLoading,
     FunModal,
-    ChangelogEntryCard
+    ChangelogEntryCard,
+    PageConfigEditor
   },
   data() {
     return {
@@ -296,11 +321,23 @@ export default {
       version: '0.0.0',
       isLoading: true, // 应用加载状态
       showVersionModal: false, // 启动时版本更新弹窗
+      /** 这次启动是否已经在主窗口提示过新版本，避免托盘事件和手动检查各弹一次。 */
+      updateToastShown: false,
+      /** 通知组件还没挂上时，先记住已经发现的新版本，挂上后再补一条 toast。 */
+      hasPendingUpdateToast: false,
+      /** 还没弹出的新版本号。检查结果没带版本号时为空字符串。 */
+      pendingUpdateVersion: '',
       changelogEntries, // 全部更新记录（来自 data/changelog）
       isInitialized: false, // 存档系统是否已初始化
       isLogoClicked: false, // logo 是否被点击过
       // 筛选器相关数据
       showFilterSidebar: false,
+      /** 当前页面的配置编辑器是否打开。 */
+      showPageConfigEditor: false,
+      /** 正在编辑的页面 id。打开时记下来，避免编辑过程中路由变化把编辑器指到别的页。 */
+      configuringPageId: '',
+      /** 保存页面配置后加一，用来重新载入当前资源页。 */
+      pageConfigRevision: 0,
       isFilterSidebarLoading: false,
       currentFilterData: {
         filters: []
@@ -325,6 +362,8 @@ export default {
       // 安全键相关
       safetyKeyEnabled: false,
       safetyKeyUrl: '',
+      /** 用户在设置里按下录入的安全键，启动时要拿它去注册，不能写死 Esc。 */
+      safetyKeyShortcut: 'Esc',
       // 应用缩放提示（菜单放大/缩小/实际大小时顶部中央短暂显示）
       appZoomHintVisible: false,
       appZoomHintPercent: 100,
@@ -386,9 +425,9 @@ export default {
           description: '分享和发现社区创作内容'
         },
         users: {
-          name: '用户',
-          icon: '👤',
-          description: '记录您的个人数据已经本软件的各种数据'
+          name: '统计与成就',
+          icon: '📊',
+          description: '查看使用统计与已解锁成就'
         },
         messages: {
           name: '信息中心',
@@ -447,6 +486,13 @@ export default {
       if (!this.activeTabIsHome) return {}
       return { marginLeft: this.sidebarWidth + 'px' }
     },
+    /**
+     * 路由视图的重建标记。
+     * 页面配置保存后 revision 会变，当前这一页会按新配置重新打开。
+     */
+    routerViewKey(): string {
+      return `${String(this.$route.name || '')}-${this.pageConfigRevision}`
+    },
     currentPageConfig() {
       // 从路由 meta 中获取页面配置
       const route = this.$route
@@ -487,6 +533,71 @@ export default {
     },
   },
   methods: {
+    /**
+     * 监听主进程的更新结果，并在主窗口弹出 toast。
+     * 检查发生在启动大约 5 秒后。监听要在这之前挂上；通知组件若还没就绪，先把版本号记下。
+     * 托盘可以被用户关掉，所以新版本必须出现在主窗口里。
+     */
+    setupAppUpdateToast() {
+      if (!window.electronAPI || !window.electronAPI.onUpdateAvailable) {
+        return
+      }
+      window.electronAPI.onUpdateAvailable((_event: any, info: any) => {
+        const version = info && info.version ? String(info.version) : ''
+        this.showUpdateAvailableToast(version)
+      })
+      if (window.electronAPI.onUpdateError) {
+        window.electronAPI.onUpdateError((_event: any, error: any) => {
+          const code = error && typeof error === 'object' ? error.code : ''
+          if (code !== 'MANUAL_DOWNLOAD_REQUIRED') {
+            return
+          }
+          const version = error.version ? String(error.version) : ''
+          this.showUpdateAvailableToast(version)
+        })
+      }
+    },
+
+    /**
+     * 在主窗口提示有新版本。
+     * 同一版本只弹一次。通知服务还没就绪时先记下，避免启动检查比界面更早完成时把提示丢掉。
+     * 通知会一直留着，直到用户关掉或点它打开下载页。短时间消失的话，和托盘气泡一样容易错过。
+     * @param version 远端版本号
+     */
+    showUpdateAvailableToast(version: string) {
+      if (this.updateToastShown) {
+        return
+      }
+      if (!notificationService.isInitialized) {
+        this.hasPendingUpdateToast = true
+        this.pendingUpdateVersion = version || ''
+        return
+      }
+      this.updateToastShown = true
+      this.hasPendingUpdateToast = false
+      this.pendingUpdateVersion = ''
+      const message = version
+        ? lf('版本 {version} 已发布。点这条通知可以打开 GitHub 下载页。', { version })
+        : lf('有新版本发布。点这条通知可以打开 GitHub 下载页。', {})
+      notificationService.info('发现新版本', message, {
+        persistent: true,
+        onClick: () => this.openLatestReleasePage()
+      })
+    },
+
+    /**
+     * 用系统浏览器打开最新 Release 页面。
+     * 绿色版不能自己替换解压目录，所以这里只带用户去下载。
+     */
+    openLatestReleasePage() {
+      const url = GITHUB_REPO.latestReleaseUrl
+      if (window.electronAPI && window.electronAPI.openExternal) {
+        window.electronAPI.openExternal(url)
+        return
+      }
+      window.open(url, '_blank')
+    },
+
     startSidebarResize(e: MouseEvent) {
       this.isSidebarResizing = true
       this.sidebarResizeStartX = e.clientX
@@ -646,9 +757,11 @@ export default {
           await updateDynamicRoutes(this.$router)
         }
 
-        // 当前页面如果变为隐藏/已删除（仅资源视图会有 pageConfig）则回退
+        // 当前正在看的资源页被隐藏或删除后，回到还存在的页面
         const currentRouteName = this.$route.name as string
-        if (this.mainNavViewIds.includes(currentRouteName) && currentRouteName !== 'home' && !this.currentPageConfig) {
+        const isResourceRoute = !!this.$route.meta?.pageConfig
+        const stillVisible = this.pages.some(page => page.id === currentRouteName && !page.isHidden)
+        if (isResourceRoute && !stillVisible) {
           const firstVisible = this.pages.find(p => !p.isHidden)?.id
           if (firstVisible) {
             this.$router.push({ name: firstVisible })
@@ -661,6 +774,10 @@ export default {
       }
     },
     
+    isViewActive(viewId: string) {
+      return this.$route.name === viewId || this.$route.matched.some(record => record.name === viewId)
+    },
+
     navigateTo(viewId: string) {
       this.$router.push({ name: viewId }).catch(err => {
         // 忽略重复导航错误
@@ -1106,29 +1223,54 @@ export default {
         console.error('停止应用使用时长跟踪失败:', error)
       }
     },
+    /**
+     * 打开当前资源页的配置。
+     * 设置里的页面管理不好找，所以每个资源页的标题右侧都能直接改这一页。
+     */
+    openCurrentPageConfig() {
+      const pageId = this.currentPageConfig?.id || (this.$route.name as string)
+      if (!pageId) return
+      this.configuringPageId = pageId
+      this.showPageConfigEditor = true
+    },
+    /**
+     * 当前页的配置已经写入文件。
+     * 先刷新侧边栏和标题，再让这一页按新的筛选和字段重新加载。
+     */
+    async handleCurrentPageConfigSaved() {
+      await this.reloadCustomPages()
+      const page = this.pages.find((item: { id: string }) => item.id === this.$route.name)
+      if (page && this.$route.meta) {
+        this.$route.meta.title = page.name
+        this.$route.meta.icon = page.icon
+        this.$route.meta.description = page.description || `${page.name}管理页面`
+      }
+      this.pageConfigRevision += 1
+    },
     getCurrentViewTitle() {
       const route = this.$route
+      // 路由和页面配置里存的是简体原文。先查词条，用户自己起的页面名对不上就原样显示。
       if (route.meta?.title) {
-        return route.meta.title as string
+        return lt(route.meta.title as string)
       }
       const viewId = route.name as string
       if (this.$te('views.' + viewId + '.name')) {
         return this.$t('views.' + viewId + '.name')
       }
       const config = this.viewConfig[viewId]
-      return config?.name || '未知页面'
+      return lt(config?.name || '未知页面')
     },
     getCurrentViewDescription() {
       const route = this.$route
       if (route.meta?.description) {
-        return route.meta.description as string
+        return lt(route.meta.description as string)
       }
       const viewId = route.name as string
       if (this.$te('views.' + viewId + '.description')) {
         return this.$t('views.' + viewId + '.description')
       }
       const config = this.viewConfig[viewId]
-      return config?.description || '无描述'
+      return lt(config?.description || '无描述')
     },
     async applyBackgroundImage(imagePath: string) {
       try {
@@ -1260,6 +1402,7 @@ export default {
         if (settings) {
           this.safetyKeyEnabled = settings.safetyKeyEnabled || false
           this.safetyKeyUrl = settings.safetyKeyUrl || 'https://www.bilibili.com/video/BV1jR4y1M78W/?p=17&share_source=copy_web&vd_source=7de8c277f16e8e03b48a5328dddfe2ce&t=466'
+          this.safetyKeyShortcut = settings.safetyKeyShortcut || 'Esc'
           this.setupSafetyKeyListener()
         }
       } catch (error) {
@@ -1380,7 +1523,7 @@ export default {
     async setupSafetyKeyListener() {
       try {
         if (window.electronAPI && window.electronAPI.setSafetyKey) {
-          const result = await window.electronAPI.setSafetyKey(this.safetyKeyEnabled, this.safetyKeyUrl)
+          const result = await window.electronAPI.setSafetyKey(this.safetyKeyEnabled, this.safetyKeyUrl, this.safetyKeyShortcut)
           if (result.success) {
             console.log('✅ 安全键全局快捷键已', this.safetyKeyEnabled ? '启用' : '禁用', '(ESC)')
           } else {
@@ -1393,11 +1536,18 @@ export default {
     }
   },
   async mounted() {
-    // 监听应用整体缩放变化（菜单/快捷键），显示“缩放至 XX%”提示
+    // 先挂上更新监听。后面的存档初始化可能超过 5 秒，检查结果要先接住。
+    this.setupAppUpdateToast()
+
+    // 监听应用整体缩放变化（菜单、快捷键、Ctrl+滚轮），显示“缩放至 XX%”提示
     if (window.electronAPI && typeof window.electronAPI.onAppZoomChanged === 'function') {
       this.removeAppZoomChanged = window.electronAPI.onAppZoomChanged((data) => {
         const zoomLevel = data && typeof data.zoomLevel === 'number' ? data.zoomLevel : 0
-        const percent = Math.round(Math.pow(2, zoomLevel) * 100)
+        // Electron 实际比例是 1.2^level。以前用 2^level，放大一档会把 120% 显示成 200%
+        const zoomFactor = data && typeof data.zoomFactor === 'number'
+          ? data.zoomFactor
+          : Math.pow(1.2, zoomLevel)
+        const percent = Math.round(zoomFactor * 100)
         this.appZoomHintPercent = percent
         this.appZoomHintVisible = true
         if (this.appZoomHintTimer) clearTimeout(this.appZoomHintTimer)
@@ -1527,6 +1677,9 @@ export default {
     // 初始化通知服务
     try {
       notificationService.init(this.$refs.toastNotification)
+      if (this.hasPendingUpdateToast) {
+        this.showUpdateAvailableToast(this.pendingUpdateVersion)
+      }
     } catch (error) {
       console.error('通知服务初始化失败:', error)
     }
@@ -1551,6 +1704,13 @@ export default {
       const theme = settings?.theme || 'auto'
       console.log('从 SaveManager 加载主题设置:', theme)
       this.applyTheme(theme)
+
+      // 伪装开关存在 SQLite 里。卡片挂载时只看内存，所以这里同步一次并通知已经渲染的卡片。
+      const disguiseEnabled = settings?.disguiseMode === true
+      setDisguiseModeEnabled(disguiseEnabled)
+      window.dispatchEvent(new CustomEvent('disguise-mode-changed', {
+        detail: { enabled: disguiseEnabled }
+      }))
       
       // 加载个性化设置
       if (settings?.customAppTitle) {
@@ -1649,10 +1809,13 @@ export default {
     
     // 监听安全键设置变化事件
     window.addEventListener('safety-key-changed', async (event: CustomEvent) => {
-      const { enabled, url } = event.detail
+      const { enabled, url, shortcut } = event.detail
       this.safetyKeyEnabled = enabled
       if (url) {
         this.safetyKeyUrl = url
+      }
+      if (shortcut) {
+        this.safetyKeyShortcut = shortcut
       }
       await this.setupSafetyKeyListener()
     })
@@ -1740,7 +1903,7 @@ export default {
 </script>
 
 <style scoped>
-/* 应用缩放提示：屏幕上方中央，菜单/快捷键改变整体缩放时短暂显示 */
+/* 应用缩放提示：屏幕上方中央，菜单、快捷键或 Ctrl+滚轮改变整体缩放时短暂显示 */
 .app-zoom-hint {
   position: fixed;
   top: 16px;

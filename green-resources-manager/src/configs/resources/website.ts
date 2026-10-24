@@ -72,6 +72,7 @@ export class Website extends BaseResources {
 	getSaveData(): any {
 		return {
 			id: this.id.value || this.id.defaultValue || '',
+			fingerprint: this.fingerprint.value || '',
 			resourceType: this.resourceType.value || this.resourceType.defaultValue || 'website',
 			name: this.name.value || '',
 			description: this.description.value || '',
@@ -84,7 +85,9 @@ export class Website extends BaseResources {
 			addedDate: this.addedDate.value || '',
 			rating: this.rating.value || 0,
 			comment: this.comment.value || '',
-			isFavorite: this.isFavorite.value || false
+			isFavorite: this.isFavorite.value || false,
+			finished: this.finished.value === true,
+			finishedAt: this.finished.value === true ? (this.finishedAt.value || '') : ''
 		}
 	}
 

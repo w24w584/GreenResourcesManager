@@ -2,21 +2,21 @@
   <div class="debug-view">
     <div class="debug-content">
       <div class="debug-header">
-        <h2>🐛 Debug 页面</h2>
-        <p>用于各种调试和测试</p>
+        <h2>{{ $lt('🐛 Debug 页面') }}</h2>
+        <p>{{ $lt('用于各种调试和测试') }}</p>
       </div>
 
       <div class="debug-section">
-        <h3>快速测试</h3>
+        <h3>{{ $lt('快速测试') }}</h3>
         <div class="test-actions">
-          <button @click="testNotification" class="btn btn-primary">测试通知</button>
-          <button @click="testAlert" class="btn btn-primary">测试弹窗</button>
-          <button @click="testConfirm" class="btn btn-primary">测试确认</button>
+          <button @click="testNotification" class="btn btn-primary">{{ $lt('测试通知') }}</button>
+          <button @click="testAlert" class="btn btn-primary">{{ $lt('测试弹窗') }}</button>
+          <button @click="testConfirm" class="btn btn-primary">{{ $lt('测试确认') }}</button>
         </div>
       </div>
 
       <div class="debug-section">
-        <h3>资源测试</h3>
+        <h3>{{ $lt('资源测试') }}</h3>
         <div class="resources-grid">
           <div v-for="(resource, index) in exampleResources" :key="`${resource.type}-${index}`" class="resource-item">
             <h4 class="resource-type-label">{{ resource.typeLabel }}</h4>
@@ -423,7 +423,7 @@ export default defineComponent({
     },
     isImageFile(filePath: string): boolean {
       if (!filePath) return false
-      const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg']
+      const imageExtensions = ['.jpg', '.jpeg', '.jpe', '.jfif', '.png', '.gif', '.bmp', '.webp', '.svg', 'jpg', 'jpeg', 'jpe', 'jfif', 'png', 'gif', 'bmp', 'webp', 'svg']
       const fileExt = this.getFileExtension(filePath).toLowerCase()
       return imageExtensions.includes(fileExt) || imageExtensions.includes(`.${fileExt}`)
     },
@@ -513,7 +513,7 @@ export default defineComponent({
 
 .btn-primary {
   background: var(--accent-color);
-  color: white;
+  color: var(--text-on-accent, #1a1a1a);
 }
 
 .btn-primary:hover {
@@ -649,7 +649,7 @@ export default defineComponent({
 .btn-browse {
   padding: var(--spacing-md) var(--spacing-xl);
   background: var(--accent-color);
-  color: white;
+  color: var(--text-on-accent, #1a1a1a);
   border: none;
   border-radius: var(--radius-md);
   font-size: 1rem;
