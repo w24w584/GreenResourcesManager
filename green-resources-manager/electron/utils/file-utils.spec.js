@@ -1,12 +1,12 @@
 // @vitest-environment node
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
-const { writeJsonFile, readJsonFile } = require('./file-utils.js')
+const { writeJsonFile, readJsonFile, searchMatchingFiles } = require('./file-utils.js')
 
 let dir
 
@@ -100,5 +100,151 @@ describe('JSON 存档文件读取', () => {
     const result = await readJsonFile(file)
     expect(result.success).toBe(false)
     expect(result.error).toBeTruthy()
+  })
+})
+
+describe('批量搜索文件', () => {
+  it('只返回勾选扩展名的文件', async () => {
+    mkdirSync(join(dir, 'game'), { recursive: true })
+    writeFileSync(join(dir, 'game', 'start.exe'), '')
+    writeFileSync(join(dir, 'game', 'run.bat'), '')
+    writeFileSync(join(dir, 'game', 'readme.txt'), '')
+
+    const result = await searchMatchingFiles(dir, ['.exe', '.bat'], { maxDepth: 2 })
+
+    expect(result.success).toBe(true)
+    expect(result.files.sort()).toEqual([
+      join('game', 'run.bat'),
+      join('game', 'start.exe')
+    ])
+  })
+
+  it('本层找到匹配后不再进入子文件夹，兄弟文件夹继续搜索', async () => {
+    mkdirSync(join(dir, 'GameA', 'bin'), { recursive: true })
+    mkdirSync(join(dir, 'GameB', 'sub'), { recursive: true })
+    writeFileSync(join(dir, 'GameA', 'game.exe'), '')
+    writeFileSync(join(dir, 'GameA', 'launcher.exe'), '')
+    writeFileSync(join(dir, 'GameA', 'bin', 'helper.exe'), '')
+    writeFileSync(join(dir, 'GameB', 'sub', 'game.exe'), '')
+
+    const result = await searchMatchingFiles(dir, ['.exe'], {
+      maxDepth: 5,
+      stopAtFirstMatch: true
+    })
+
+    expect(result.success).toBe(true)
+    // GameA 本层已经有两个程序，下面的 bin 不再进去；GameB 本层没有，继续往下找到 sub。
+    expect(result.files.sort()).toEqual([
+      join('GameA', 'game.exe'),
+      join('GameA', 'launcher.exe'),
+      join('GameB', 'sub', 'game.exe')
+    ])
+  })
+
+  it('不勾「本层找到后停止」时仍然递归列出子文件夹里的文件', async () => {
+    mkdirSync(join(dir, 'GameA', 'bin'), { recursive: true })
+    writeFileSync(join(dir, 'GameA', 'game.exe'), '')
+    writeFileSync(join(dir, 'GameA', 'bin', 'helper.exe'), '')
+
+    const result = await searchMatchingFiles(dir, ['.exe'], { maxDepth: 5 })
+
+    expect(result.files.sort()).toEqual([
+      join('GameA', 'bin', 'helper.exe'),
+      join('GameA', 'game.exe')
+    ])
+  })
+
+  it('folder: 只跳过文件夹，folder:= 只跳过同名文件夹', async () => {
+    mkdirSync(join(dir, 'Tool', 'loaders'), { recursive: true })
+    mkdirSync(join(dir, 'lib'), { recursive: true })
+    mkdirSync(join(dir, 'library'), { recursive: true })
+    mkdirSync(join(dir, 'Game'), { recursive: true })
+    writeFileSync(join(dir, 'Tool', 'loaders', 'pidfinder.exe'), '')
+    writeFileSync(join(dir, 'lib', 'python.exe'), '')
+    writeFileSync(join(dir, 'library', 'asset.exe'), '')
+    writeFileSync(join(dir, 'Game', 'Tool.exe'), '')
+    writeFileSync(join(dir, 'Game', 'main.exe'), '')
+
+    const result = await searchMatchingFiles(dir, ['.exe'], {
+      maxDepth: 5,
+      excludePatterns: ['folder:tool', 'folder:=lib']
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.files).toEqual(expect.arrayContaining([
+      join('Game', 'Tool.exe'),
+      join('Game', 'main.exe'),
+      join('library', 'asset.exe')
+    ]))
+    expect(result.files).not.toContain(join('Tool', 'loaders', 'pidfinder.exe'))
+    expect(result.files).not.toContain(join('lib', 'python.exe'))
+  })
+
+  it('文件夹模式只收直接含有目标文件的那一层，合集目录继续往下', async () => {
+    mkdirSync(join(dir, '我的漫画', '合集', '第一话'), { recursive: true })
+    mkdirSync(join(dir, '我的漫画', '单行本'), { recursive: true })
+    writeFileSync(join(dir, '我的漫画', '合集', '第一话', '001.jpg'), '')
+    writeFileSync(join(dir, '我的漫画', '合集', '第一话', '002.png'), '')
+    writeFileSync(join(dir, '我的漫画', '单行本', 'cover.jpg'), '')
+    writeFileSync(join(dir, '我的漫画', '说明.txt'), '')
+
+    const result = await searchMatchingFiles(dir, [], {
+      maxDepth: 5,
+      mode: 'folders',
+      folderGroups: [{ id: 'imageFolder', extensions: ['.jpg', '.png'] }]
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.files.sort()).toEqual([
+      join('我的漫画', '单行本'),
+      join('我的漫画', '合集', '第一话')
+    ])
+    expect(result.kinds[join('我的漫画', '合集', '第一话')]).toBe('imageFolder')
+    expect(result.kinds[join('我的漫画', '单行本')]).toBe('imageFolder')
+  })
+
+  it('选中的文件夹自己就有图片时，收它自己并且不再进入子文件夹', async () => {
+    mkdirSync(join(dir, 'extra'), { recursive: true })
+    writeFileSync(join(dir, 'page.jpg'), '')
+    writeFileSync(join(dir, 'extra', 'more.jpg'), '')
+
+    const result = await searchMatchingFiles(dir, [], {
+      maxDepth: 3,
+      mode: 'folders',
+      folderGroups: [{ id: 'imageFolder', extensions: ['.jpg'] }]
+    })
+
+    expect(result.files).toEqual(['.'])
+    expect(result.kinds['.']).toBe('imageFolder')
+  })
+
+  it('深度为 0 时，根目录没有目标文件就不往下找', async () => {
+    mkdirSync(join(dir, '第一话'), { recursive: true })
+    writeFileSync(join(dir, '第一话', '001.jpg'), '')
+
+    const result = await searchMatchingFiles(dir, [], {
+      maxDepth: 0,
+      mode: 'folders',
+      folderGroups: [{ id: 'imageFolder', extensions: ['.jpg'] }]
+    })
+
+    expect(result.files).toEqual([])
+  })
+
+  it('同一层同时有图片和视频时，只按勾选顺序归到前面的那一类', async () => {
+    writeFileSync(join(dir, 'a.jpg'), '')
+    writeFileSync(join(dir, 'b.mp4'), '')
+
+    const result = await searchMatchingFiles(dir, [], {
+      maxDepth: 1,
+      mode: 'folders',
+      folderGroups: [
+        { id: 'imageFolder', extensions: ['.jpg'] },
+        { id: 'videoFolder', extensions: ['.mp4'] }
+      ]
+    })
+
+    expect(result.files).toEqual(['.'])
+    expect(result.kinds['.']).toBe('imageFolder')
   })
 })

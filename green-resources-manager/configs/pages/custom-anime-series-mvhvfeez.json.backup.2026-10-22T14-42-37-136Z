@@ -1,15 +1,16 @@
 {
-  "id": "games",
-  "name": "游戏",
-  "icon": "🎮",
-  "description": "可以管理游戏、应用等exe文件",
-  "settingsKey": "game",
-  "defaultPageSize": 30,
+  "id": "anime-series-mvhvfeez",
+  "name": "动漫~",
+  "icon": "📺",
+  "description": "可以管理番剧和电视剧",
+  "settingsKey": "anime-series-mvhvfeez",
+  "defaultPageSize": 20,
   "resourceTypes": [
-    "Game"
+    "Anime"
   ],
+  "showFolderVideosInDetail": true,
   "displayLayoutConfig": {
-    "minWidth": 80,
+    "minWidth": 150,
     "maxWidth": 400
   },
   "sortOptions": [
@@ -26,30 +27,6 @@
       "order": "desc"
     },
     {
-      "id": "lastPlayed-asc",
-      "label": "按最后游玩时间",
-      "field": "lastPlayed",
-      "order": "asc"
-    },
-    {
-      "id": "lastPlayed-desc",
-      "label": "按最后游玩时间（降序）",
-      "field": "lastPlayed",
-      "order": "desc"
-    },
-    {
-      "id": "playTime-asc",
-      "label": "按游戏时长（升序）",
-      "field": "playTime",
-      "order": "asc"
-    },
-    {
-      "id": "playTime-desc",
-      "label": "按游戏时长（降序）",
-      "field": "playTime",
-      "order": "desc"
-    },
-    {
       "id": "addedDate-asc",
       "label": "按添加时间",
       "field": "addedDate",
@@ -63,17 +40,17 @@
     }
   ],
   "emptyStateConfig": {
-    "icon": "🎮",
-    "title": "你的游戏库是空的",
-    "description": "点击\"添加游戏\"按钮来添加你的第一个游戏，或直接拖拽游戏文件到此处",
-    "buttonText": "添加第一个游戏",
+    "icon": "📺",
+    "title": "你的番剧库是空的",
+    "description": "点击\"添加番剧\"按钮来添加你的第一部番剧",
+    "buttonText": "添加第一部番剧",
     "buttonAction": "showAddDialog"
   },
   "toolbarConfig": {
     "items": [
       {
         "type": "button",
-        "label": "添加游戏",
+        "label": "添加番剧",
         "action": "showAddDialog",
         "icon": "➕",
         "buttonType": "primary"
@@ -86,7 +63,7 @@
       },
       {
         "type": "search",
-        "placeholder": "搜索游戏...",
+        "placeholder": "搜索番剧...",
         "action": "filterBySearch"
       },
       {
@@ -101,12 +78,10 @@
     ]
   },
   "dialogConfig": {
-    "addTitle": "添加游戏",
-    "editTitle": "编辑游戏",
-    "addButtonText": "添加游戏",
-    "editButtonText": "保存修改",
-    "enableEngineAutoDetect": true,
-    "enableScreenshotCover": true
+    "addTitle": "添加番剧",
+    "editTitle": "编辑番剧",
+    "addButtonText": "添加番剧",
+    "editButtonText": "保存修改"
   },
   "filterConfig": [
     {
@@ -128,65 +103,66 @@
       "title": "标签筛选",
       "filterType": "resourceField",
       "params": {
-        "resource": "game",
+        "resource": "videoFolder",
         "field": "tags"
       },
       "isArray": true
     },
     {
-      "key": "developers",
-      "title": "开发商筛选",
+      "key": "actors",
+      "title": "演员筛选",
       "filterType": "resourceField",
       "params": {
-        "resource": "game",
-        "field": "developers"
+        "resource": "videoFolder",
+        "field": "actors"
       },
       "isArray": true
     },
     {
-      "key": "publishers",
-      "title": "发行商筛选",
+      "key": "series",
+      "title": "系列筛选",
       "filterType": "resourceField",
       "params": {
-        "resource": "game",
-        "field": "publisher"
-      },
-      "isArray": true
-    },
-    {
-      "key": "engines",
-      "title": "引擎筛选",
-      "filterType": "resourceField",
-      "params": {
-        "resource": "game",
-        "field": "engine"
+        "resource": "videoFolder",
+        "field": "series"
       },
       "isArray": false
     },
     {
-      "key": "others",
-      "title": "其他筛选",
-      "filterType": "runningStatus",
+      "key": "voiceActors",
+      "title": "声优筛选",
+      "filterType": "resourceField",
       "params": {
-        "runningLabel": "正在游玩"
-      }
+        "resource": "videoFolder",
+        "field": "voiceActors"
+      },
+      "isArray": true
+    },
+    {
+      "key": "productionTeam",
+      "title": "制作组筛选",
+      "filterType": "resourceField",
+      "params": {
+        "resource": "videoFolder",
+        "field": "productionTeam"
+      },
+      "isArray": true
     }
   ],
   "acceptedKinds": [
-    "executable",
-    "archive"
+    "video",
+    "videoFolder"
   ],
   "pageFields": [
     "name",
-    "nickname",
-    "nameZh",
     "description",
-    "developers",
-    "publisher",
+    "series",
     "tags",
-    "engine",
-    "coverPath",
-    "resourcePath"
+    "actors",
+    "voiceActors",
+    "productionTeam",
+    "resourcePath",
+    "thumbnail"
   ],
   "pageFieldDefs": [
     {
@@ -195,29 +171,14 @@
       "editor": "text"
     },
     {
-      "key": "nickname",
-      "label": "昵称",
-      "editor": "text"
-    },
-    {
-      "key": "nameZh",
-      "label": "中文名",
-      "editor": "text"
-    },
-    {
       "key": "description",
       "label": "游戏简介",
       "editor": "textarea"
     },
     {
-      "key": "developers",
-      "label": "开发商",
-      "editor": "tags"
-    },
-    {
-      "key": "publisher",
-      "label": "发行商",
-      "editor": "tags"
+      "key": "series",
+      "label": "系列名",
+      "editor": "text"
     },
     {
       "key": "tags",
@@ -225,19 +186,29 @@
       "editor": "tags"
     },
     {
-      "key": "engine",
-      "label": "选择游戏引擎",
-      "editor": "engine"
+      "key": "actors",
+      "label": "演员",
+      "editor": "tags"
     },
     {
-      "key": "coverPath",
-      "label": "游戏封面",
-      "editor": "cover"
+      "key": "voiceActors",
+      "label": "声优",
+      "editor": "tags"
+    },
+    {
+      "key": "productionTeam",
+      "label": "制作组",
+      "editor": "tags"
     },
     {
       "key": "resourcePath",
       "label": "游戏路径",
       "editor": "file"
+    },
+    {
+      "key": "thumbnail",
+      "label": "缩略图",
+      "editor": "cover"
     }
   ]
 }

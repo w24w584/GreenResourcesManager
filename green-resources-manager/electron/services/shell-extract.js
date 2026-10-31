@@ -14,6 +14,7 @@ const { spawn, execFile } = require('child_process')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
+const { StringDecoder } = require('string_decoder')
 
 /** 右键菜单在注册表里的键名。换名字等于另做一项，旧项要靠卸载删掉。 */
 const MENU_KEY = 'GreenResourcesManager.ExtractHere'
@@ -55,6 +56,15 @@ const DEFAULT_PASSWORDS = [
   '666666'
 ]
 
+/** 进度窗最多保留这么多工具输出。加了 -bb1 后文件多时输出会很长，只留尾部足够判断错误。 */
+const MAX_CAPTURE_LENGTH = 64 * 1024
+
+/** 百分比更新最快多久推一次，避免文件很多时把 IPC 刷爆。 */
+const PROGRESS_INTERVAL_MS = 80
+
+/** 当前解压文件名的更新间隔。 */
+const DETAIL_INTERVAL_MS = 120
+
 /** 还没完成启动时先攒着，等主进程准备好再解压。 */
 const pendingJobs = []
 
@@ -78,7 +88,17 @@ let progressState = {
   fileName: '',
   message: '准备解压',
   status: 'running',
-  outputDir: ''
+  outputDir: '',
+  /** 0-100。状态不是 running 时没有意义。 */
+  percent: 0,
+  /** 工具还没给出百分比时显示滚动条，让人知道程序还在动。 */
+  indeterminate: true,
+  /** 正在处理的文件名。 */
+  detail: '',
+  /** 密码本里对上的密码。没加密时是空字符串。 */
+  password: '',
+  /** 失败时给用户复制的完整输出。 */
+  errorLog: ''
 }
 
 /** 进度窗口里「打开主界面」时调用，由主进程传进来。 */
@@ -207,6 +227,11 @@ function registerIpcHandlers(ipcMain, hooks) {
   ipcMain.handle('shell-extract-show-main', () => {
     if (typeof showMainWindow === 'function') showMainWindow()
   })
+  ipcMain.handle('shell-extract-copy', async (_event, text) => {
+    const { clipboard } = require('electron')
+    clipboard.writeText(String(text || ''))
+    return { success: true }
+  })
 }
 
 /**
@@ -235,7 +260,12 @@ async function extractOne(archivePath, generation) {
     fileName,
     status: 'running',
     message: '正在准备解压…',
-    outputDir: ''
+    outputDir: '',
+    percent: 0,
+    indeterminate: true,
+    detail: '',
+    password: '',
+    errorLog: ''
   }, generation)
 
   if (!fs.existsSync(archivePath)) {
@@ -257,18 +287,30 @@ async function extractOne(archivePath, generation) {
     fileName,
     status: 'running',
     outputDir,
-    message: '正在检查是否需要密码…'
+    message: '正在检查是否需要密码…',
+    percent: 0,
+    indeterminate: true,
+    detail: ''
   }, generation)
 
-  const plain = await runTool(tool, buildTestArgs(tool, archivePath, null))
+  const plain = await runTool(tool, buildTestArgs(tool, archivePath, null), {
+    onProgress: (percent) => publish({
+      fileName,
+      status: 'running',
+      outputDir,
+      message: '正在检查是否需要密码…',
+      percent,
+      indeterminate: false
+    }, generation)
+  })
   if (generation !== runId) return
 
   /** @type {string | null} 空字符串表示没加密；null 表示还没找到密码 */
   let password = ''
   if (!plain.ok) {
     if (!isPasswordFailure(tool, plain)) {
-      const message = plain.output || `无法读取这个压缩包（退出码 ${plain.code}）`
-      publish({ fileName, status: 'error', message, outputDir }, generation)
+      const message = summarizeToolOutput(plain.output) || `无法读取这个压缩包（退出码 ${plain.code}）`
+      publish({ fileName, status: 'error', message, outputDir, errorLog: buildErrorLog(plain), password: '' }, generation)
       notify('解压失败', message)
       return
     }
@@ -276,23 +318,37 @@ async function extractOne(archivePath, generation) {
     const passwords = readPasswords()
     if (passwords.length === 0) {
       const message = '这个压缩包有密码，但密码本是空的'
-      publish({ fileName, status: 'error', message, outputDir }, generation)
+      publish({ fileName, status: 'error', message, outputDir, errorLog: message, password: '' }, generation)
       notify('解压失败', message)
       return
     }
 
     let found = false
-    for (let index = 0; index < passwords.length; index += 1) {
+    const total = passwords.length
+    for (let index = 0; index < total; index += 1) {
       if (generation !== runId) return
       const candidate = passwords[index]
+      const attemptMessage = `正在试密码本里的第 ${index + 1}/${total} 个密码…`
       publish({
         fileName,
         status: 'running',
         outputDir,
-        message: `正在试密码本里的第 ${index + 1}/${passwords.length} 个密码…`
+        message: attemptMessage,
+        percent: Math.round((index / total) * 100),
+        indeterminate: true,
+        detail: ''
       }, generation)
 
-      const tested = await runTool(tool, buildTestArgs(tool, archivePath, candidate))
+      const tested = await runTool(tool, buildTestArgs(tool, archivePath, candidate), {
+        onProgress: (percent) => publish({
+          fileName,
+          status: 'running',
+          outputDir,
+          message: attemptMessage,
+          percent: Math.min(100, Math.round(((index + percent / 100) / total) * 100)),
+          indeterminate: false
+        }, generation)
+      })
       if (generation !== runId) return
       if (tested.ok) {
         password = candidate
@@ -300,8 +356,8 @@ async function extractOne(archivePath, generation) {
         break
       }
       if (!isPasswordFailure(tool, tested)) {
-        const message = tested.output || `解压工具出错（退出码 ${tested.code}）`
-        publish({ fileName, status: 'error', message, outputDir }, generation)
+        const message = summarizeToolOutput(tested.output) || `解压工具出错（退出码 ${tested.code}）`
+        publish({ fileName, status: 'error', message, outputDir, errorLog: buildErrorLog(tested), password: '' }, generation)
         notify('解压失败', message)
         return
       }
@@ -309,33 +365,109 @@ async function extractOne(archivePath, generation) {
 
     if (!found) {
       const message = `密码本里的 ${passwords.length} 个密码都不对`
-      publish({ fileName, status: 'error', message, outputDir }, generation)
+      publish({ fileName, status: 'error', message, outputDir, errorLog: message, password: '' }, generation)
       notify('解压失败', message)
       return
     }
   }
 
   if (generation !== runId) return
+  const extractMessage = password ? `密码对上了：${password}，正在解压…` : '正在解压…'
+  /**
+   * 正式解压优先用 7-Zip。
+   * UnRAR 发现输出被程序接走后就不再刷新百分比，进度窗只能空转。
+   * 7-Zip 的 -bsp1 会写出整个压缩包的百分比。密码仍先用 UnRAR 试，它对加密 RAR 的判断更准。
+   * 没装 7-Zip 时继续用原来的工具，这时没有百分比可读，进度条保持滚动。
+   */
+  const sevenZip = (tool.kind === 'unrar' || tool.kind === 'winrar') ? findSevenZip() : null
+  /** 真正写出文件的工具。有 7-Zip 时 RAR 也交给它，才能拿到进度。 */
+  const extractTool = sevenZip ? { command: sevenZip, kind: '7z' } : tool
   publish({
     fileName,
     status: 'running',
     outputDir,
-    message: password ? '密码对上了，正在解压…' : '正在解压…'
+    message: extractMessage,
+    percent: 0,
+    indeterminate: true,
+    detail: '',
+    password,
+    errorLog: ''
   }, generation)
 
   fs.mkdirSync(outputDir, { recursive: true })
-  const extracted = await runTool(tool, buildExtractArgs(tool, archivePath, outputDir, password || null))
+  /** 工具还没吐出百分比时保持 -1，进度条继续滚动。 */
+  let extractionPercent = -1
+  /**
+   * 把工具报上来的百分比和当前文件名推到进度窗。
+   * 两个工具共用这一套，7-Zip 失败后改回 UnRAR 时不用再写一遍。
+   */
+  const watchExtraction = {
+    onProgress: (percent) => {
+      extractionPercent = percent
+      publish({
+        fileName,
+        status: 'running',
+        outputDir,
+        message: extractMessage,
+        percent,
+        indeterminate: false,
+        password
+      }, generation)
+    },
+    onDetail: (detail) => publish({
+      fileName,
+      status: 'running',
+      outputDir,
+      message: extractMessage,
+      percent: extractionPercent >= 0 ? extractionPercent : 0,
+      indeterminate: extractionPercent < 0,
+      detail,
+      password
+    }, generation)
+  }
+  let extracted = await runTool(extractTool, buildExtractArgs(extractTool, archivePath, outputDir, password || null), watchExtraction)
+  if (!extracted.ok && extractTool !== tool && generation === runId) {
+    extractionPercent = -1
+    publish({
+      fileName,
+      status: 'running',
+      outputDir,
+      message: extractMessage,
+      percent: 0,
+      indeterminate: true,
+      detail: '',
+      password
+    }, generation)
+    extracted = await runTool(tool, buildExtractArgs(tool, archivePath, outputDir, password || null), watchExtraction)
+  }
   if (generation !== runId) return
 
   if (!extracted.ok) {
-    const message = extracted.output || `解压失败（退出码 ${extracted.code}）`
-    publish({ fileName, status: 'error', message, outputDir }, generation)
+    const message = summarizeToolOutput(extracted.output) || `解压失败（退出码 ${extracted.code}）`
+    publish({
+      fileName,
+      status: 'error',
+      message,
+      outputDir,
+      password,
+      errorLog: buildErrorLog(extracted)
+    }, generation)
     notify('解压失败', message)
     return
   }
 
-  const message = password ? `已用密码本解压到 ${outputDir}` : `已解压到 ${outputDir}`
-  publish({ fileName, status: 'success', message, outputDir }, generation)
+  const message = password ? `已用密码「${password}」解压到 ${outputDir}` : `已解压到 ${outputDir}`
+  publish({
+    fileName,
+    status: 'success',
+    message,
+    outputDir,
+    percent: 100,
+    indeterminate: false,
+    detail: '',
+    password,
+    errorLog: ''
+  }, generation)
   // notify('解压完成', message)
 }
 
@@ -495,7 +627,8 @@ function whichExecutable(name) {
  */
 function buildTestArgs(tool, archivePath, password) {
   if (tool.kind === '7z') {
-    const args = ['t', '-y', '-sccUTF-8', archivePath]
+    // -bsp1 把百分比写到输出里，密码本逐个试的时候也能看到进度
+    const args = ['t', '-y', '-sccUTF-8', '-bsp1', archivePath]
     if (password) args.splice(1, 0, `-p${password}`)
     return args
   }
@@ -514,7 +647,8 @@ function buildTestArgs(tool, archivePath, password) {
  */
 function buildExtractArgs(tool, archivePath, outputDir, password) {
   if (tool.kind === '7z') {
-    const args = ['x', archivePath, `-o${outputDir}`, '-y', '-sccUTF-8']
+    // -bsp1 输出百分比，-bb1 输出当前文件，进度窗才有东西可动
+    const args = ['x', archivePath, `-o${outputDir}`, '-y', '-sccUTF-8', '-bsp1', '-bb1']
     if (password) args.push(`-p${password}`)
     return args
   }
@@ -524,12 +658,17 @@ function buildExtractArgs(tool, archivePath, outputDir, password) {
 }
 
 /**
- * 跑一次解压工具，把退出码和输出收回来。
+ * 跑一次解压工具，把退出码和输出收回来，并解析 7-Zip / UnRAR 的进度。
+ * 7-Zip 用 -bsp1 输出百分比、-bb1 输出当前文件；UnRAR 默认就会打印进度。
+ * WinRAR 主程序是静默运行，拿不到百分比，调用方会继续显示滚动条。
  * @param {{ command: string, kind: string }} tool 解压工具
  * @param {string[]} args 参数
+ * @param {{ onProgress?: (percent: number) => void, onDetail?: (detail: string) => void }} [options] 进度回调
  * @returns {Promise<{ ok: boolean, code: number | null, output: string }>}
  */
-function runTool(tool, args) {
+function runTool(tool, args, options = {}) {
+  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null
+  const onDetail = typeof options.onDetail === 'function' ? options.onDetail : null
   return new Promise((resolve) => {
     const child = spawn(tool.command, args, {
       cwd: path.dirname(tool.command),
@@ -538,25 +677,175 @@ function runTool(tool, args) {
     })
     currentChild = child
     let output = ''
-    child.stdout.on('data', (chunk) => {
-      output += chunk.toString()
-    })
-    child.stderr.on('data', (chunk) => {
-      output += chunk.toString()
-    })
+    let pending = ''
+    let lastPercent = -1
+    let lastPercentAt = 0
+    let lastDetail = ''
+    let lastDetailAt = 0
+    // 一次读到的字节可能把中文切成两半，用 StringDecoder 拼回来
+    const decoder = new StringDecoder('utf8')
+    /** 原始输出。结束时再按 UTF-8 或国标码整段解码，避免中文报错被拆碎。 */
+    const chunks = []
+
+    const emitPercent = (value) => {
+      if (!onProgress) return
+      if (!Number.isFinite(value) || value <= 0 || value > 100) return
+      // 0% 没有信息量，保持滚动条，等第一个有效百分比再切成确定进度
+      // 同一个数值不重复送。RAR 逐个文件解压时百分比会回到 0，跳过即可
+      if (value === lastPercent) return
+      const now = Date.now()
+      if (value < 100 && now - lastPercentAt < PROGRESS_INTERVAL_MS) return
+      lastPercent = value
+      lastPercentAt = now
+      onProgress(value)
+    }
+
+    const emitDetail = (value) => {
+      if (!onDetail) return
+      const detail = String(value || '').trim()
+      if (!detail || detail === lastDetail) return
+      const now = Date.now()
+      if (now - lastDetailAt < DETAIL_INTERVAL_MS) return
+      lastDetail = detail
+      lastDetailAt = now
+      onDetail(detail)
+    }
+
+    /**
+     * 解析一行输出。7-Zip 用退格把百分比刷在同一行，UnRAR 在控制台里也是这样。
+     * 退格要删掉前一个字，不能只从字符串里拿掉，否则一行里会堆着 1% 2% 3%，对不上「整行只有一个百分比」。
+     * @param {string} raw 一行原文
+     * @param {boolean} allowDetail 这一行是否已经完整。没等到换行的半截不能拿去当文件名
+     */
+    const inspect = (raw, allowDetail = true) => {
+      const text = applyConsoleEdits(raw).trim()
+      if (!text) return
+
+      // 7-Zip -bb1：`- 文件名` 正在解压，`+ 文件名` 正在写入
+      const fileLine = text.match(/^[-+]\s+(.+)$/)
+      if (fileLine) {
+        if (allowDetail) emitDetail(fileLine[1])
+        return
+      }
+
+      // 行尾的百分比。7-Zip 往往整行就是 `45%`，UnRAR 则是 `Extracting  文件名  45%`。
+      const percentMatch = text.match(/(?:^|\s)(\d{1,3})%\s*$/)
+      if (percentMatch) emitPercent(Number(percentMatch[1]))
+
+      const unrarLine = text.match(/^(?:Extracting|Testing)\s{2,}(.+)$/i)
+      if (unrarLine && allowDetail) {
+        emitDetail(unrarLine[1].replace(/\d{1,3}%/g, '').replace(/\s+/g, ' ').trim())
+      }
+    }
+
+    /**
+     * 处理一段解出来的文本。进度用 \r 刷新、文件清单用 \n 分行，都当分隔符。
+     * @param {string} text 文本
+     */
+    const feedText = (text) => {
+      if (!text) return
+      output = (output + text).slice(-MAX_CAPTURE_LENGTH)
+      pending += text
+      const parts = pending.split(/[\r\n]/)
+      pending = parts.pop()
+      parts.forEach((part) => inspect(part, true))
+      // 最后一段可能还没等到分隔符。只从里面认百分比，不能把半截文件名推出去
+      if (pending.length > 4096) pending = pending.slice(-4096)
+      inspect(pending, false)
+    }
+
+    const takeChunk = (chunk) => {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+      chunks.push(buf)
+      feedText(decoder.write(buf))
+    }
+    child.stdout.on('data', takeChunk)
+    child.stderr.on('data', takeChunk)
     child.on('error', (error) => {
       if (currentChild === child) currentChild = null
       resolve({ ok: false, code: -1, output: error.message })
     })
     child.on('close', (code) => {
       if (currentChild === child) currentChild = null
+      const rest = decoder.end()
+      if (rest) feedText(rest)
+      // 进程结束时最后一行不会再有换行符，这时才能当成完整内容看
+      if (pending) inspect(pending, true)
+      const decoded = decodeToolOutput(Buffer.concat(chunks)).trim()
       resolve({
         ok: code === 0 || code === null,
         code,
-        output: output.trim()
+        output: decoded || output.trim()
       })
     })
   })
+}
+
+/**
+ * 按控制台的退格处理一段输出。
+ * 7-Zip 刷新百分比时会发退格再写新数字。只删除退格字符的话，旧数字还在，进度就认不出来。
+ * @param {string} text 可能含有退格的原文
+ * @returns {string}
+ */
+function applyConsoleEdits(text) {
+  /** 退格之后真正还留在这一行上的字符。 */
+  const kept = []
+  for (const char of String(text || '')) {
+    if (char === '\u0008') {
+      kept.pop()
+      continue
+    }
+    kept.push(char)
+  }
+  return kept.join('')
+}
+
+/**
+ * 把解压工具的输出解成文字。
+ * 7-Zip 按 UTF-8 写。中文版 WinRAR 按系统的国标码写，按 UTF-8 硬读会变成乱码。
+ * @param {Buffer} buffer 工具写出的原始字节
+ * @returns {string}
+ */
+function decodeToolOutput(buffer) {
+  if (!buffer || buffer.length === 0) return ''
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buffer)
+  } catch (error) {
+    return new TextDecoder('gb18030').decode(buffer)
+  }
+}
+
+/**
+ * 失败时放进弹窗、可供复制的全文。
+ * 文件清单可能很长，只保留末尾一段，原因一般写在最后。
+ * @param {{ code: number | null, output: string }} result 工具结果
+ * @returns {string}
+ */
+function buildErrorLog(result) {
+  /** 退出码单独占一行，复制出去时还能对上工具的返回值。 */
+  const codeLine = `退出码：${result.code}`
+  const body = String(result.output || '').trim()
+  const text = body ? `${codeLine}\n${body}` : codeLine
+  const limit = 12000
+  if (text.length <= limit) return text
+  return `（前面的输出已省略）\n${text.slice(-limit)}`
+}
+
+/**
+ * 把工具输出压成一小段。加了 -bb1 之后文件清单很长，错误信息一般在末尾。
+ * @param {string} output 工具输出
+ * @returns {string}
+ */
+function summarizeToolOutput(output) {
+  const lines = String(output || '')
+    .split(/[\r\n]+/)
+    .map((line) => line.replace(/\u0008/g, '').trim())
+    .filter(Boolean)
+  // 优先挑真正说明原因的那一行，找不到再退回最后三行
+  const errorLine = [...lines].reverse().find((line) => /error|failed|cannot|wrong|密码|失败/i.test(line))
+  const tail = errorLine ? [errorLine] : lines.slice(-3)
+  const text = tail.join('\n')
+  return text.length > 500 ? text.slice(-500) : text
 }
 
 /**
@@ -613,10 +902,18 @@ function readPasswords() {
  */
 function publish(partial, generation) {
   if (generation !== runId) return
+  const wasRunning = progressState.status === 'running'
   progressState = { ...progressState, ...partial }
+  // 结束状态不该再显示滚动条，否则会被误认为还在解压
+  if (progressState.status !== 'running') progressState.indeterminate = false
   ensureProgressWindow()
   if (progressWindow && !progressWindow.isDestroyed()) {
-    if (progressState.status !== 'running') progressWindow.setAlwaysOnTop(false)
+    if (progressState.status !== 'running') {
+      progressWindow.setAlwaysOnTop(false)
+    } else if (!wasRunning) {
+      // 队列里的下一个压缩包开始时，重新把进度窗放到前面
+      progressWindow.setAlwaysOnTop(true)
+    }
     progressWindow.webContents.send('shell-extract-update', progressState)
   }
 }
@@ -629,12 +926,12 @@ function ensureProgressWindow() {
   const { BrowserWindow } = require('electron')
   progressWindow = new BrowserWindow({
     width: 460,
-    height: 260,
+    height: 420,
     minWidth: 420,
-    minHeight: 240,
+    minHeight: 320,
     title: '解压',
     autoHideMenuBar: true,
-    resizable: false,
+    resizable: true,
     minimizable: true,
     maximizable: false,
     show: true,

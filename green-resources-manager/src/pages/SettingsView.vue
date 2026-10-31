@@ -3,9 +3,6 @@
     <div class="settings-layout">
       <!-- 左侧导航栏 -->
       <div class="settings-sidebar">
-        <div class="sidebar-header">
-          <h3>{{ $t('settings.title') }}</h3>
-        </div>
         <nav class="settings-nav">
           <div 
             v-for="category in settingsCategories" 
@@ -39,6 +36,13 @@
 
           <!-- 语言页不翻译。看不懂当前界面的人要靠这一页自己认出来。 -->
           <LanguageSettings v-if="currentCategory === 'language'" />
+
+          <!-- 存档位置、云存档和自动备份单独一页，避免通用设置越堆越长。 -->
+          <SaveDataSettings
+            v-if="currentCategory === 'save'"
+            :settings="settings"
+            @update:settings="handleSettingUpdate"
+          />
 
           <!-- 个性化设置 -->
           <PersonalizationSettings 
@@ -149,6 +153,7 @@ import PersonalizationSettings from '../components/settings/PersonalizationSetti
 import PageManagementSettings from '../components/settings/PageManagementSettings.vue'
 import LanguageSettings from '../components/settings/LanguageSettings.vue'
 import AISettings from '../components/settings/AISettings.vue'
+import SaveDataSettings from '../components/settings/SaveDataSettings.vue'
 
 export default {
   name: 'SettingsView',
@@ -167,6 +172,7 @@ export default {
     PageManagementSettings,
     LanguageSettings,
     AISettings
+    SaveDataSettings
   },
   setup() {
     const { t } = useI18n()
@@ -185,6 +191,7 @@ export default {
           description: '看懂下面哪一句，就选哪一句。 If you can read one of these, choose it.',
           unlocalized: true
         },
+        { id: 'save', name: '存档', icon: '💾', description: '存档位置、云存档和自动备份' },
         { id: 'personalization', name: '个性化', icon: '🎨', description: '个性化外观和主题设置' },
         { id: 'ai', name: 'AI 设置', icon: 'AI', description: '配置 AI 服务商和本地密钥' },
         { id: 'pageManagement', name: '页面管理', icon: '🧩', description: '添加、编辑、排序或删除页面' },
@@ -230,6 +237,7 @@ export default {
         smartWindowDetection: true,
         // 视频播放设置
         videoPlayMode: 'external',
+        videoTranscodeQuality: 'standard',
         // 小说设置
         novelDefaultOpenMode: 'internal',
         novelFontSize: 16,
@@ -238,9 +246,11 @@ export default {
         novelBackgroundColor: '#ffffff',
         novelTextColor: '#333333',
         novelWordsPerPage: 1000,
+        novelReadMode: 'paged',
         novelShowProgress: true,
         // 网站默认仍用系统浏览器。选「软件新标签页」后才在应用内打开。
         websiteOpenMode: 'external',
+        onedriveBackup: false,
         // 分页设置
         image: {
           listPageSize: 20,
@@ -274,6 +284,10 @@ export default {
       autoSaveTimer: null,
       /** 漫画页选好指定程序后，用来把路径写回当前设置。卸掉页面时要拿同一个函数取消监听。 */
       comicArchiveProgramListener: null as ((event: Event) => void) | null,
+      /** 左下角快速开关改了伪装模式时，同步这一页内存里的值，避免自动保存写回旧状态。 */
+      disguiseModeListener: null as ((event: Event) => void) | null,
+      /** 左下角改了安全键时，同步这一页的开关，避免自动保存把刚打开的状态写回去。 */
+      safetyKeyListener: null as ((event: Event) => void) | null,
       isAutoSaving: false,
       lastSaveTime: null,
       // 初始化标志，避免在初始化时触发watcher
@@ -439,7 +453,8 @@ export default {
             backgroundColor: this.settings.novelBackgroundColor || '#ffffff',
             textColor: this.settings.novelTextColor || '#333333',
             wordsPerPage: this.settings.novelWordsPerPage || 1000,
-            showProgress: this.settings.novelShowProgress !== undefined ? this.settings.novelShowProgress : true
+            showProgress: this.settings.novelShowProgress !== undefined ? this.settings.novelShowProgress : true,
+            readMode: this.settings.novelReadMode === 'infinite' ? 'infinite' : 'paged'
           }
         }
         
@@ -484,7 +499,8 @@ export default {
             backgroundColor: this.settings.novelBackgroundColor || '#ffffff',
             textColor: this.settings.novelTextColor || '#333333',
             wordsPerPage: this.settings.novelWordsPerPage || 1000,
-            showProgress: this.settings.novelShowProgress !== undefined ? this.settings.novelShowProgress : true
+            showProgress: this.settings.novelShowProgress !== undefined ? this.settings.novelShowProgress : true,
+            readMode: this.settings.novelReadMode === 'infinite' ? 'infinite' : 'paged'
           }
         }
         
@@ -497,6 +513,7 @@ export default {
         delete cleanSettings.novelTextColor
         delete cleanSettings.novelWordsPerPage
         delete cleanSettings.novelShowProgress
+        delete cleanSettings.novelReadMode
         // 保留安全键快捷键设置
         cleanSettings.safetyKeyShortcut = this.settings.safetyKeyShortcut || 'Esc'
         
@@ -509,6 +526,18 @@ export default {
           novelListPageSize: cleanSettings.novel?.listPageSize
         })
         
+        // 播放列表不在这个表单里改。保存前从数据库再读一次，避免用打开设置页时的旧副本把它盖掉。
+        if (window.electronAPI?.sqliteGetSettings) {
+          try {
+            const fresh = await window.electronAPI.sqliteGetSettings()
+            if (Array.isArray(fresh?.settings?.musicPlaylist)) {
+              cleanSettings.musicPlaylist = fresh.settings.musicPlaylist
+            }
+          } catch (playlistError) {
+            console.warn('[SettingsView] 保留播放列表失败:', playlistError)
+          }
+        }
+
         // 保存设置
         const success = await saveManager.saveSettings(cleanSettings)
         
@@ -592,6 +621,7 @@ export default {
             smartWindowDetection: true,
             // 视频播放设置
             videoPlayMode: 'external',
+            videoTranscodeQuality: 'standard',
             // 小说设置
             novelDefaultOpenMode: 'internal',
             novelFontSize: 16,
@@ -600,9 +630,11 @@ export default {
             novelBackgroundColor: '#ffffff',
             novelTextColor: '#333333',
             novelWordsPerPage: 1000,
+            novelReadMode: 'paged',
             novelShowProgress: true,
             // 网站设置。external 用系统浏览器，internal 在软件里新开标签页。
             websiteOpenMode: 'external',
+        onedriveBackup: false,
             // 分页设置
             image: {
               listPageSize: 20,
@@ -981,6 +1013,16 @@ export default {
       this.handleComicArchiveProgramSelected(event)
     }
     window.addEventListener('comic-archive-program-selected', this.comicArchiveProgramListener)
+    this.disguiseModeListener = (event: Event) => {
+      const enabled = (event as CustomEvent<{ enabled?: boolean }>).detail?.enabled === true
+      this.settings.disguiseMode = enabled
+    }
+    window.addEventListener('disguise-mode-changed', this.disguiseModeListener)
+    this.safetyKeyListener = (event: Event) => {
+      const enabled = (event as CustomEvent<{ enabled?: boolean }>).detail?.enabled === true
+      this.settings.safetyKeyEnabled = enabled
+    }
+    window.addEventListener('safety-key-changed', this.safetyKeyListener)
     try {
       // 先初始化存档设置的默认值，确保UI可以立即显示
       if (!this.settings.saveDataLocation) {
@@ -1008,6 +1050,7 @@ export default {
                 this.settings.novelBackgroundColor = this.settings.novel.readerSettings.backgroundColor || '#ffffff'
                 this.settings.novelTextColor = this.settings.novel.readerSettings.textColor || '#333333'
                 this.settings.novelWordsPerPage = this.settings.novel.readerSettings.wordsPerPage || 1000
+                this.settings.novelReadMode = this.settings.novel.readerSettings.readMode === 'infinite' ? 'infinite' : 'paged'
                 this.settings.novelShowProgress = this.settings.novel.readerSettings.showProgress !== undefined ? this.settings.novel.readerSettings.showProgress : true
               }
             }
@@ -1110,12 +1153,18 @@ export default {
             if (!this.settings.novelWordsPerPage) {
               this.settings.novelWordsPerPage = 1000
             }
+            if (this.settings.novelReadMode !== 'paged' && this.settings.novelReadMode !== 'infinite') {
+              this.settings.novelReadMode = 'paged'
+            }
             if (this.settings.novelShowProgress === undefined) {
               this.settings.novelShowProgress = true
             }
             // 旧存档没有这一项时，继续用系统浏览器，避免升级后网站忽然改在软件里打开。
             if (this.settings.websiteOpenMode !== 'internal' && this.settings.websiteOpenMode !== 'external') {
               this.settings.websiteOpenMode = 'external'
+            }
+            if (typeof this.settings.onedriveBackup !== 'boolean') {
+              this.settings.onedriveBackup = false
             }
             
             // 初始化安全键设置（如果未设置）
@@ -1239,6 +1288,14 @@ export default {
       window.removeEventListener('comic-archive-program-selected', this.comicArchiveProgramListener)
       this.comicArchiveProgramListener = null
     }
+    if (this.disguiseModeListener) {
+      window.removeEventListener('disguise-mode-changed', this.disguiseModeListener)
+      this.disguiseModeListener = null
+    }
+    if (this.safetyKeyListener) {
+      window.removeEventListener('safety-key-changed', this.safetyKeyListener)
+      this.safetyKeyListener = null
+    }
     // 清理定时器
     if (this.autoSaveTimer) {
       clearTimeout(this.autoSaveTimer)
@@ -1267,18 +1324,6 @@ export default {
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-}
-
-.sidebar-header {
-  padding: 20px;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.sidebar-header h3 {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: 18px;
-  font-weight: 600;
 }
 
 .settings-nav {

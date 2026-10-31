@@ -157,6 +157,9 @@ export type ActionHandler = (resource: any, context: ActionHandlerContext) => Pr
 export interface ActionHandlerContext {
   // 是否为 Electron 环境
   isElectronEnvironment: boolean
+
+  // 当前资源所在页面的 ID（用于独立播放器加载同页曲库）
+  pageId?: string
   
   // 更新资源的方法
   updateResource: (id: string, updates: any) => Promise<void>
@@ -538,7 +541,10 @@ export const openAlbumHandler: ActionHandler = async (resource, context) => {
       context.setCurrentAlbum(resource)
     }
     if (context.setCurrentPageIndex) {
-      context.setCurrentPageIndex(0)
+      // 页码从 1 开始存。阅读器要的是从 0 开始的下标，所以减 1。没有记录时从第一页打开。
+      const savedPage = Number(BaseResources.extractPrimitiveValue(resource.currentPage?.value ?? resource.currentPage))
+      const page = Number.isFinite(savedPage) && savedPage > 0 ? Math.floor(savedPage) : 1
+      context.setCurrentPageIndex(page - 1)
     }
     if (context.clearPages) {
       context.clearPages()
@@ -841,10 +847,26 @@ export const playAudioHandler: ActionHandler = async (resource, context) => {
       isFavorite: BaseResources.extractPrimitiveValue(resource.isFavorite?.value ?? resource.isFavorite) || false
     }
     
-    // 触发全局播放事件（GlobalAudioPlayer 会监听此事件）
-    // 参考 useAudioPlayback.playAudio 的实现
-    console.log('🎵 通过全局播放器播放音频:', resourceName)
-    window.dispatchEvent(new CustomEvent('global-play-audio', { detail: audioForPlayer }))
+    // 优先在独立标签页中打开音乐播放器
+    if (context.isElectronEnvironment && window.electronAPI?.tabOpenAudioPlayer) {
+      const theme = document.documentElement.getAttribute('data-theme') || ''
+      const result = await window.electronAPI.tabOpenAudioPlayer({
+        path: filePath,
+        title: resourceName,
+        id: resourceId,
+        pageId: context.pageId,
+        theme
+      })
+      if (!result?.success) {
+        notify.toast('error', '播放失败', result?.error || '打开音乐播放器标签页失败')
+        return
+      }
+      console.log('🎵 已在独立标签页打开音乐播放器:', resourceName)
+    } else {
+      // 非 Electron 环境回退到全局播放器（GlobalAudioPlayer 会监听此事件）
+      console.log('🎵 通过全局播放器播放音频:', resourceName)
+      window.dispatchEvent(new CustomEvent('global-play-audio', { detail: audioForPlayer }))
+    }
     
     // 显示播放通知（参考 useAudioPlayback.playAudio 的实现）
     // notify.native('开始播放', `正在播放: ${resourceName}`)

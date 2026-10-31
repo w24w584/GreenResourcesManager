@@ -11,6 +11,22 @@ import { BaseResources } from './base/ResourcesDataBase.ts'
 import { ResourceField } from './base/ResourceField.ts'
 
 /**
+ * 把视频封面对照表收成普通对象。
+ * 路径统一成正斜杠，同一集不会因为斜杠方向被记成两份。
+ * @param raw 字段里的原值
+ */
+function copyVideoThumbnailMap(raw: unknown): Record<string, string> {
+	/** 可以写进存档的对照表。空对象表示还没有封面。 */
+	const copy: Record<string, string> = {}
+	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return copy
+	for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+		if (typeof value !== 'string' || !value.trim()) continue
+		copy[String(key).replace(/\\/g, '/')] = value
+	}
+	return copy
+}
+
+/**
  * 视频文件夹类
  */
 export class VideoFolder extends BaseResources {
@@ -72,9 +88,46 @@ export class VideoFolder extends BaseResources {
 		editType: new FormField_SelectVideoThumbnail('缩略图', false)
 	})
 
+	/**
+	 * 文件夹里每个视频的封面。
+	 * 键是视频路径，值是存档里的缩略图路径。
+	 * 视频列表每次打开都重新扫描，封面要单独记住，不然下次打开又是空的。
+	 */
+	videoThumbnails: ResourceField<Record<string, string>> = new ResourceField<Record<string, string>>({
+		saveable: true,
+		defaultValue: {}
+	})
+
+	/**
+	 * 每一集看到哪里。
+	 * 键是视频路径，值是秒数和百分比。文件夹本身不因为看完一集就被标成看完。
+	 */
+	playbackByFile: ResourceField<Record<string, { seconds: number, progress: number, duration: number }>> = new ResourceField<Record<string, { seconds: number, progress: number, duration: number }>>({
+		saveable: true,
+		defaultValue: {}
+	})
+
 	visitedSessions: ResourceField<string[]> = new ResourceField<string[]>({
 		saveable: true,
 		defaultValue: []
+	})
+
+	/**
+	 * 整季被点开播放的次数。
+	 * 单集只是播放清单，次数记在这一季上，不记在某一集上。
+	 */
+	playCount: ResourceField<number> = new ResourceField<number>({
+		saveable: true,
+		defaultValue: 0
+	})
+
+	/**
+	 * 整季累计观看秒数。
+	 * 播放器每隔几秒上报位置时，只把小幅前进的秒数加进来。快进一大段不算进观看时长。
+	 */
+	watchTime: ResourceField<number> = new ResourceField<number>({
+		saveable: true,
+		defaultValue: 0
 	})
 
 	get lastViewed(): string | null {
@@ -111,7 +164,14 @@ export class VideoFolder extends BaseResources {
 			productionTeam: Array.isArray(this.productionTeam.value) ? [...this.productionTeam.value] : [],
 			resourcePath: this.resourcePath.value || '',
 			thumbnail: this.thumbnail.value || '',
+			videoThumbnails: copyVideoThumbnailMap(this.videoThumbnails.value),
+			playbackByFile: this.playbackByFile.value && typeof this.playbackByFile.value === 'object'
+				? { ...this.playbackByFile.value }
+				: {},
+			videoCount: (this as any).videoCount ?? 0,
 			visitedSessions: Array.isArray(this.visitedSessions.value) ? [...this.visitedSessions.value] : [],
+			playCount: Number(this.playCount.value) || 0,
+			watchTime: Number(this.watchTime.value) || 0,
 			addedDate: this.addedDate.value || '',
 			rating: this.rating.value || 0,
 			comment: this.comment.value || '',
@@ -226,6 +286,18 @@ export class VideoFolder extends BaseResources {
 				label: '视频数量',
 				formatter: undefined,
 				defaultValue: '0'
+			},
+			{
+				field: 'playCount',
+				label: '播放次数',
+				formatter: undefined,
+				defaultValue: '0'
+			},
+			{
+				field: 'watchTime',
+				label: '观看时长',
+				formatter: 'formatPlayTime',
+				defaultValue: '0 分钟'
 			},
 			{
 				field: 'addedDate',

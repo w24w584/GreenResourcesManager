@@ -11,27 +11,29 @@ import { BaseResources } from '@resources/base/ResourcesDataBase.ts'
 const COVER_FIELDS = ['coverPath', 'cover', 'thumbnail', 'thumbnailPath']
 
 /**
- * 资源类型到保存目录的映射
+ * 资源类型到存档文件夹的映射。
+ * 一种资源只用一个文件夹，封面写在这个文件夹的 Covers 下面，和截图放在一起。
+ * 文件夹名要和 electron/utils/save-layout.js 里的 RESOURCE_SAVE_FOLDERS 一致。
  */
 const RESOURCE_TYPE_TO_DIR_MAP: Record<string, string> = {
-  Game: 'games',
-  Software: 'software',
-  Image: 'images',
-  Manga: 'images',
-  SingleImage: 'singleImage',
-  Video: 'videos',
-  Anime: 'videos',
-  Novel: 'novels',
-  Website: 'websites',
-  Audio: 'audios',
-  Other: 'other'
+  Game: 'Game',
+  Software: 'Software',
+  Image: 'Image',
+  Manga: 'Image',
+  SingleImage: 'SingleImage',
+  Video: 'Video',
+  Anime: 'AnimeSeries',
+  Novel: 'Novel',
+  Website: 'Website',
+  Audio: 'Audio',
+  Other: 'Other'
 }
 
 /**
  * 获取资源类型对应的目录名
  */
 function getResourceTypeDir(resourceType: string): string {
-  return RESOURCE_TYPE_TO_DIR_MAP[resourceType] || 'other'
+  return RESOURCE_TYPE_TO_DIR_MAP[resourceType] || 'Other'
 }
 
 /**
@@ -39,7 +41,10 @@ function getResourceTypeDir(resourceType: string): string {
  */
 function shouldProcessCover(coverPath: string): boolean {
   if (!coverPath || typeof coverPath !== 'string') return false
-  
+
+  // 压缩包内图片由 archive 协议直接读取，不是磁盘上的独立文件，不能复制封面
+  if (coverPath.startsWith('archive://')) return false
+
   // 如果是相对路径（相对于 SaveData 目录），不需要处理
   if (!coverPath.includes(':') && !coverPath.startsWith('file://') && !coverPath.startsWith('archive://') && !coverPath.startsWith('http://') && !coverPath.startsWith('https://') && !coverPath.startsWith('data:')) {
     return false

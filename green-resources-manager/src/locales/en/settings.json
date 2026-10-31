@@ -11,6 +11,7 @@
     "audios": "Audio",
     "novels": "Novels",
     "websites": "Websites",
+    "save": "Save Data",
     "archive": "Archive",
     "pet": "Pet",
     "updates": "Updates"
@@ -26,6 +27,7 @@
     "audios": "Audio playback and management settings",
     "novels": "Novel reading and management settings",
     "websites": "Website bookmark and management settings",
+    "save": "Save location, cloud save, and automatic backups",
     "archive": "Archive extraction and compression settings",
     "pet": "Desktop pet display and management settings",
     "updates": "Application updates and version management"
@@ -105,6 +107,14 @@
     "openFolderDesc": "Open the application save data folder in file explorer",
     "openFolderButton": "Open Folder"
   },
+  "cloudSave": {
+    "title": "Cloud save",
+    "description": "When on, each save copies the database into GreenResourcesManager inside your local OneDrive folder. The OneDrive app uploads it. Covers and resource files stay on this computer.",
+    "connected": "OneDrive found",
+    "missing": "OneDrive not found",
+    "missingDetail": "No OneDrive sync folder was detected. Install and sign in to OneDrive, then turn this on.",
+    "openFolder": "Open cloud save folder"
+  },
   "autoBackup": {
     "title": "Enable Auto Backup",
     "description": "Backs up the whole save folder on a schedule. Backups go to the system user folder (usually on C: on Windows), separate from the save folder",
@@ -118,6 +128,57 @@
     "openFolderDesc": "Open the auto backup folder in File Explorer",
     "openFolderButton": "Open Folder",
     "openedDetail": "Opened backup folder: {path}"
+  },
+  "sameResource": {
+    "title": "Same Resource Detection",
+    "description": "When you import a resource or an old file goes missing, these traits decide whether it is the same record. An identical full path always counts as the same resource.",
+    "presets": {
+      "label": "Quick presets",
+      "loose": "Loose",
+      "standard": "Standard",
+      "strict": "Strict",
+      "precise": "Precise",
+      "content": "By content"
+    },
+    "criteria": {
+      "fileName": {
+        "name": "Same file name",
+        "desc": "Compares the last part of the path, extension included"
+      },
+      "parentFolder": {
+        "name": "Same parent folder",
+        "desc": "For files, the containing folder; for folders, the folder above"
+      },
+      "pathWithoutDrive": {
+        "name": "Same path without drive",
+        "desc": "D:\\Games\\Foo and E:\\Games\\Foo match; the folder levels must be identical"
+      },
+      "fileSize": {
+        "name": "Same file size",
+        "desc": "Same byte count and extension; single files only"
+      },
+      "fingerprint": {
+        "name": "Same content fingerprint",
+        "desc": "Project file list, manga page count or file size match, so renames can still be found"
+      }
+    },
+    "mode": {
+      "label": "Combine conditions",
+      "all": "All must match (recommended)",
+      "any": "Any one matches (risky)",
+      "joinAll": " and ",
+      "joinAny": " or ",
+      "anyWarning": "\"Any one matches\" treats a record as the same when just one trait lines up, which can merge unrelated resources. Only choose this if you are sure."
+    },
+    "summaryPrefix": "Current rule:",
+    "fingerprintHint": "With content fingerprints enabled, the first import scans the project files. Large folders such as games take longer.",
+    "pathHint": "An identical full path always counts as the same record and links across pages. Other conditions compare resources on the current page only. With several conditions, all are required by default.",
+    "needOne": "Keep at least one detection condition."
+  },
+  "resourceMarker": {
+    "title": "Write hidden marker files",
+    "description": "Write a hidden marker next to each resource so it remembers its resource ID in the app. Renamed, moved or re-lettered resources can still be recognized when imported again. When off, only paths and content fingerprints are used.",
+    "disableConfirm": "When disabled, moved or renamed resources may no longer be recognized as their original records. Existing marker files stay on disk but are ignored. Turn this off anyway?"
   },
   "personalization": {
     "customAppTitle": "Custom App Title",

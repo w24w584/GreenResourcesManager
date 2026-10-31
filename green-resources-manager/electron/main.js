@@ -94,12 +94,14 @@ const apiServer = require('./api-server')
 // 引入 IPC 处理器模块
 const dialogHandlers = require('./ipc/dialog-handlers')
 const fileHandlers = require('./ipc/file-handlers')
+const workshopHandlers = require('./ipc/workshop-handlers')
 const pathHandlers = require('./ipc/path-handlers')
 const systemHandlers = require('./ipc/system-handlers')
 const settingsHandlers = require('./ipc/settings-handlers')
 const aiHandlers = require('./ipc/ai-handlers')
 const mediaHandlers = require('./ipc/media-handlers')
 const tabHandlers = require('./ipc/tab-handlers')
+const videoPlayerHandlers = require('./ipc/video-player-handlers')
 // 引入工具模块
 const fileUtils = require('./utils/file-utils')
 const pathUtils = require('./utils/path-utils')
@@ -258,6 +260,14 @@ if (!gotTheLock) {
       }
     })
 
+    // 先把封面收进各自的资源文件夹，再打开窗口。这样界面读到的已经是新路径。
+    try {
+      const saveLayout = require('./utils/save-layout')
+      saveLayout.migrateResourceFolders(sqlite.getSaveDataDirectory(), sqlite.getDatabasePath())
+    } catch (error) {
+      console.error('[存档目录] 整理封面目录失败:', error)
+    }
+
     // 右键解压时主窗口先藏起来，进度显示在单独的小窗里
     createWindow(shellExtractPathsAtLaunch.length === 0)
     appMenu.createMenu(() => mainWindowModule.getMainWindow())
@@ -296,6 +306,9 @@ if (!gotTheLock) {
     
     // 注册文件操作相关的 IPC 处理器
     fileHandlers.registerIpcHandlers(ipcMain, fileUtils, pathUtils)
+
+    // 注册创意工坊公共目录相关的 IPC 处理器
+    workshopHandlers.registerIpcHandlers(ipcMain)
     
     // 注册路径/URL 相关的 IPC 处理器
     pathHandlers.registerIpcHandlers(ipcMain, pathUtils)
@@ -314,6 +327,7 @@ if (!gotTheLock) {
     
     // 注册标签页相关的 IPC 处理器
     tabHandlers.registerTabHandlers(ipcMain, mainWindow, isDev)
+    videoPlayerHandlers.registerVideoPlayerHandlers(ipcMain)
 
     // SQLite demo 数据查询（供「数据库」页面展示）
     ipcMain.handle('sqlite-get-all-tables-data', () => sqlite.getAllTablesData())
@@ -360,6 +374,9 @@ if (!gotTheLock) {
     
     // 保存页面资源（批量）
     ipcMain.handle('sqlite-save-page-resources', (event, pageId, resources) => sqlite.savePageResources(pageId, resources))
+
+    // 增量保存资源正文（不修改页面索引）
+    ipcMain.handle('sqlite-upsert-page-resources', (event, pageId, resources) => sqlite.upsertPageResources(pageId, resources))
     
     // 从数据库删除资源
     ipcMain.handle('sqlite-delete-resource', (event, tableName, resourceId) => sqlite.deleteResourceFromTable(tableName, resourceId))
@@ -369,6 +386,9 @@ if (!gotTheLock) {
 
     // 按路径查找已有资源，多个页面可以共用同一条
     ipcMain.handle('sqlite-find-resource-by-path', (event, filePath) => sqlite.findResourceByPath(filePath))
+
+    // 按资源 ID 查找已有资源，导入时用它把旧记录改到新路径
+    ipcMain.handle('sqlite-find-resource-by-id', (event, resourceId) => sqlite.findResourceById(resourceId))
     
     // 将旧格式 SQL（多列）迁移为 id+jsonData 格式
     ipcMain.handle('sqlite-migrate-to-json-format', () => sqlite.migrateOldSqlToJsonFormat())
@@ -384,6 +404,14 @@ if (!gotTheLock) {
     
     // 保存设置数据到 SQLite
     ipcMain.handle('sqlite-save-settings', (event, settings) => sqlite.saveSettingsToSqlite(settings))
+
+    const onedriveBackup = require('./utils/onedrive-backup')
+    // 探测本机 OneDrive 文件夹，设置页用来显示是否已连接
+    ipcMain.handle('onedrive-status', () => onedriveBackup.status())
+    // 立刻把存档数据库复制进 OneDrive。开关关着时模块自己跳过
+    ipcMain.handle('onedrive-sync-now', () => onedriveBackup.syncNow())
+    // 打开 OneDrive 里的云存档文件夹
+    ipcMain.handle('onedrive-open-folder', () => onedriveBackup.openFolder())
     
     // 从 JSON 迁移用户数据到 SQLite
     ipcMain.handle('sqlite-migrate-user', (event, customSaveDataPath) => sqlite.migrateUserFromJson(customSaveDataPath))

@@ -168,6 +168,34 @@
           <span class="nav-text">{{ $t('views.' + viewId + '.name') }}</span>
         </div>
       </div>
+
+      <!-- 左下角分成两块：左边开关伪装，右边开关安全键。安全键和设置里是同一个开关。 -->
+      <div class="sidebar-quick">
+        <button
+          type="button"
+          class="sidebar-quick__side"
+          :aria-pressed="disguiseModeEnabled"
+          :title="disguiseModeEnabled ? $lt('关闭伪装模式') : $lt('开启伪装模式')"
+          @click="toggleDisguiseMode"
+        >
+          <span class="sidebar-quick__title">{{ $lt('伪装模式') }}</span>
+          <span class="sidebar-quick__switch" :class="{ 'is-on': disguiseModeEnabled }" aria-hidden="true">
+            <span class="sidebar-quick__knob"></span>
+          </span>
+        </button>
+        <button
+          type="button"
+          class="sidebar-quick__side"
+          :aria-pressed="safetyKeyEnabled"
+          :title="$t('settings.safetyKey.description')"
+          @click="toggleSafetyKey"
+        >
+          <span class="sidebar-quick__title">{{ $t('settings.safetyKey.title') }}</span>
+          <span class="sidebar-quick__switch" :class="{ 'is-on': safetyKeyEnabled }" aria-hidden="true">
+            <span class="sidebar-quick__knob"></span>
+          </span>
+        </button>
+      </div>
     </nav>
 
     <!-- 侧边栏拖拽条 - 只在显示侧边栏时出现 -->
@@ -474,7 +502,11 @@ export default {
       sidebarWidth: 280,
       isSidebarResizing: false,
       sidebarResizeStartX: 0,
-      sidebarResizeStartWidth: 0
+      sidebarResizeStartWidth: 0,
+      /** 左下角快速开关和卡片共用的伪装模式状态 */
+      disguiseModeEnabled: false,
+      /** 设置页切换伪装模式时，用来同步左下角开关的显示 */
+      disguiseModeListener: null as ((event: Event) => void) | null
     }
   },
   computed: {
@@ -776,6 +808,104 @@ export default {
     
     isViewActive(viewId: string) {
       return this.$route.name === viewId || this.$route.matched.some(record => record.name === viewId)
+    },
+
+    /**
+     * 左下角的快速开关。
+     * 先更新内存和卡片，再写回设置；设置页开着时也会收到同一个事件同步开关。
+     */
+    async toggleDisguiseMode() {
+      const enabled = !this.disguiseModeEnabled
+      this.disguiseModeEnabled = enabled
+      setDisguiseModeEnabled(enabled)
+
+      try {
+        const disguiseManager = await import('./utils/DisguiseManager.js')
+        disguiseManager.default.clearCache()
+      } catch (error) {
+        console.warn('清除伪装图片缓存失败:', error)
+      }
+
+      try {
+        window.dispatchEvent(new CustomEvent('disguise-mode-changed', {
+          detail: { enabled }
+        }))
+      } catch (error) {
+        console.warn('触发伪装模式变化事件失败:', error)
+      }
+
+      try {
+        const settings = await saveManager.loadSettings()
+        if (settings) {
+          settings.disguiseMode = enabled
+          await saveManager.saveSettings(settings)
+        }
+      } catch (error) {
+        console.warn('保存伪装模式设置失败:', error)
+      }
+
+      notificationService.success(
+        this.$t('settings.general.disguiseModeUpdated'),
+        enabled ? this.$t('settings.general.disguiseModeEnabled') : this.$t('settings.general.disguiseModeDisabled')
+      )
+    },
+
+    /**
+     * 左下角右侧的安全键开关。
+     * 和设置里「按下 ESC 时快速最小化并打开安全网页」是同一个开关：打开后按设置里的快捷键才会执行，点这一下本身不最小化。
+     * 先向主进程注册快捷键，成功后再写入存档，避免注册失败时界面已经显示成开启。
+     */
+    async toggleSafetyKey() {
+      /** 这次要点成的状态。 */
+      const enabled = !this.safetyKeyEnabled
+      /** 沿用设置里已经填好的网页和快捷键，没有就用启动时的默认值。 */
+      const url = this.safetyKeyUrl
+      /** 用户录入的按键。空着时主进程会按 Esc 注册。 */
+      const shortcut = this.safetyKeyShortcut || 'Esc'
+
+      if (window.electronAPI?.setSafetyKey) {
+        try {
+          const result = await window.electronAPI.setSafetyKey(enabled, url, shortcut)
+          if (!result?.success) {
+            notificationService.error(
+              this.$t('settings.general.safetyKeyFailed'),
+              result?.error || this.$t('settings.general.safetyKeyFailedDetail')
+            )
+            return
+          }
+        } catch (error: any) {
+          notificationService.error(
+            this.$t('settings.general.safetyKeyFailed'),
+            error?.message || this.$t('settings.general.safetyKeyFailedDetail')
+          )
+          return
+        }
+      }
+
+      this.safetyKeyEnabled = enabled
+
+      try {
+        const settings = await saveManager.loadSettings()
+        if (settings) {
+          settings.safetyKeyEnabled = enabled
+          await saveManager.saveSettings(settings)
+        }
+      } catch (error) {
+        console.warn('保存安全键设置失败:', error)
+      }
+
+      try {
+        window.dispatchEvent(new CustomEvent('safety-key-changed', {
+          detail: { enabled, url, shortcut }
+        }))
+      } catch (error) {
+        console.warn('触发安全键变化事件失败:', error)
+      }
+
+      notificationService.success(
+        this.$t('settings.general.safetyKeyUpdated'),
+        enabled ? this.$t('settings.general.safetyKeyEnabled') : this.$t('settings.general.safetyKeyDisabled')
+      )
     },
 
     navigateTo(viewId: string) {
@@ -1351,7 +1481,6 @@ export default {
           const targetTabId = activeTabId || result.activeTabId
           const activeTab = result.tabs.find(t => t.id === targetTabId)
           const isHome = activeTab ? (activeTab.isHome || false) : (targetTabId === 'home-tab')
-          console.log('检查活动标签页:', { targetTabId, activeTab, isHome, allTabs: result.tabs })
           this.activeTabIsHome = isHome
           // 更新 hasTabs：如果有非主页标签页，则为 true
           const nonHomeTabs = result.tabs.filter(t => !t.isHome)
@@ -1539,6 +1668,12 @@ export default {
     // 先挂上更新监听。后面的存档初始化可能超过 5 秒，检查结果要先接住。
     this.setupAppUpdateToast()
 
+    // 设置页里切换伪装模式时，左下角开关跟着变
+    this.disguiseModeListener = (event: Event) => {
+      this.disguiseModeEnabled = (event as CustomEvent<{ enabled?: boolean }>).detail?.enabled === true
+    }
+    window.addEventListener('disguise-mode-changed', this.disguiseModeListener)
+
     // 监听应用整体缩放变化（菜单、快捷键、Ctrl+滚轮），显示“缩放至 XX%”提示
     if (window.electronAPI && typeof window.electronAPI.onAppZoomChanged === 'function') {
       this.removeAppZoomChanged = window.electronAPI.onAppZoomChanged((data) => {
@@ -1707,6 +1842,7 @@ export default {
 
       // 伪装开关存在 SQLite 里。卡片挂载时只看内存，所以这里同步一次并通知已经渲染的卡片。
       const disguiseEnabled = settings?.disguiseMode === true
+      this.disguiseModeEnabled = disguiseEnabled
       setDisguiseModeEnabled(disguiseEnabled)
       window.dispatchEvent(new CustomEvent('disguise-mode-changed', {
         detail: { enabled: disguiseEnabled }
@@ -1877,6 +2013,11 @@ export default {
     if (this.handlePluginNavigationUpdate) {
       window.removeEventListener('plugin-navigation-updated', this.handlePluginNavigationUpdate)
     }
+
+    if (this.disguiseModeListener) {
+      window.removeEventListener('disguise-mode-changed', this.disguiseModeListener)
+      this.disguiseModeListener = null
+    }
     
     // 关闭插件视图
     this.closePluginView()
@@ -1928,6 +2069,7 @@ export default {
 .content-body {
   display: flex;
   flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -1937,10 +2079,19 @@ export default {
 
 .page-content {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   position: relative;
+}
+
+.page-content > * {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
 }
 
 .page-content.has-background::before {
@@ -1996,6 +2147,86 @@ export default {
   background: rgba(255, 255, 255, 0.15);
 }
 
+/* 左下角两块快速开关。粘在底部，导航项多了也不会被滚走。左右各占一半。 */
+.sidebar-quick {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  flex-shrink: 0;
+  display: flex;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  background: var(--sidebar-bg-end);
+  backdrop-filter: blur(4px);
+}
+
+.sidebar-quick__side {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  color: var(--sidebar-text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.sidebar-quick__side + .sidebar-quick__side {
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.sidebar-quick__side:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-quick__side:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.8);
+  outline-offset: -2px;
+}
+
+.sidebar-quick__title {
+  min-width: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-quick__switch {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+  transition: background var(--transition-base) ease;
+}
+
+.sidebar-quick__switch.is-on {
+  background: #ffd166;
+}
+
+.sidebar-quick__knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform var(--transition-base) ease;
+}
+
+.sidebar-quick__switch.is-on .sidebar-quick__knob {
+  transform: translateX(16px);
+}
+
 /* 侧边栏窄屏模式（< 200px）：只显示图标 */
 .sidebar.sidebar-narrow .sidebar-header h1,
 .sidebar.sidebar-narrow .sidebar-header p {
@@ -2024,14 +2255,30 @@ export default {
   justify-content: center;
   padding: 12px 8px;
 }
+.sidebar.sidebar-narrow .sidebar-quick {
+  flex-direction: column;
+}
+.sidebar.sidebar-narrow .sidebar-quick__side + .sidebar-quick__side {
+  border-left: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+.sidebar.sidebar-narrow .sidebar-quick__title {
+  display: none;
+}
+.sidebar.sidebar-narrow .sidebar-quick__side {
+  justify-content: center;
+}
 
 /* 筛选器侧边栏样式 */
 .filter-sidebar-container {
   display: flex;
   flex-direction: column;
   width: 250px;
+  height: 100%;
+  min-height: 0;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border-color);
+  overflow-x: hidden;
   overflow-y: auto;
   transition: background-color 0.3s ease;
   flex-shrink: 0;

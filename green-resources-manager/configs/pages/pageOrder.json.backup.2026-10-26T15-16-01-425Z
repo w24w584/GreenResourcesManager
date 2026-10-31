@@ -1,36 +1,36 @@
 [
   {
-    "fileName": "singleImagePage.json",
+    "fileName": "gamePage.json",
     "order": 1,
     "isDefault": true,
     "isHidden": false
   },
   {
-    "fileName": "custom-games-mve7uyfl.json",
+    "fileName": "videoPage.json",
     "order": 2,
-    "isDefault": false,
-    "isHidden": false
-  },
-  {
-    "fileName": "websitePage.json",
-    "order": 3,
     "isDefault": true,
     "isHidden": false
   },
   {
-    "fileName": "imagePage.json",
+    "fileName": "custom-anime-series-mvhvfeez.json",
+    "order": 3,
+    "isDefault": false,
+    "isHidden": false
+  },
+  {
+    "fileName": "singleImagePage.json",
     "order": 4,
     "isDefault": true,
     "isHidden": false
   },
   {
-    "fileName": "gamePage.json",
+    "fileName": "websitePage.json",
     "order": 5,
     "isDefault": true,
     "isHidden": false
   },
   {
-    "fileName": "videoPage.json",
+    "fileName": "imagePage.json",
     "order": 6,
     "isDefault": true,
     "isHidden": false
