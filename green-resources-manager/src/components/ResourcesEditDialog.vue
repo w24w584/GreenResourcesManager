@@ -201,44 +201,61 @@
                   :title="$lt('使用漫画文件夹内第一张图片作为封面')"
                 >
                   <span class="btn-icon">🖼️</span> {{ $lt('使用第一张图片') }} </button>
-                <!-- 漫画封面：从文件夹选择（自带） -->
-                <button 
-                  v-if="field instanceof FormField_SelectMangaCover"
-                  type="button" 
-                  class="btn-cover-action" 
-                  @click="() => handleSelectFromFolder(key)"
-                  :disabled="!getFolderPathValue()"
+                 <!-- 漫画封面：从文件夹选择（自带） -->
+                <button
+                  v-if="isMangaCoverField"
+                  type="button"
+                  class="btn-cover-action"
+                  :disabled="!folderPathValue"
                   :title="$lt('从文件夹中挑选一张图片作为封面')"
+                  @click="handleSelectFromFolder(key)"
                 >
-                  <span class="btn-icon">📂</span> {{ $lt('从文件夹选择') }} </button>
+                  <span class="btn-icon">📂</span> {{ $lt('从文件夹选择') }}
+                </button>
+
                 <!-- 视频缩略图：随机封面 -->
-                <button 
-                  v-if="field instanceof FormField_SelectVideoThumbnail && enableRandomizeThumbnail"
-                  type="button" 
-                  class="btn-cover-action" 
-                  @click="() => handleRandomizeThumbnail(key)"
-                  :disabled="!getFilePathValue()"
+                <button
+                  v-if="isThumbnailField && enableRandomizeThumbnail"
+                  type="button"
+                  class="btn-cover-action"
+                  :disabled="!filePathValue"
+                  @click="handleRandomizeThumbnail(key)"
                 >
-                  <span class="btn-icon">🎲</span> {{ $lt('随机封面') }} </button>
+                  <span class="btn-icon">🎲</span> {{ $lt('随机封面') }}
+                </button>
+
                 <!-- 视频缩略图：从封面文件夹选择（用于文件夹） -->
-                <button 
-                  v-if="field instanceof FormField_SelectVideoThumbnail && enableSelectFromFolderCovers"
-                  type="button" 
-                  class="btn-cover-action" 
-                  @click="() => handleSelectFromFolderCovers(key)"
-                  :disabled="!getFolderPathValue()"
+                <button
+                  v-if="isThumbnailField && enableSelectFromFolderCovers"
+                  type="button"
+                  class="btn-cover-action"
+                  :disabled="!folderPathValue"
+                  @click="handleSelectFromFolderCovers(key)"
                 >
-                  <span class="btn-icon">📂</span> {{ $lt('从封面文件夹选择') }} </button>
-                <button type="button" class="btn-cover-action" @click="() => handleBrowseImage(key)">
-                  <span class="btn-icon">📁</span> {{ $lt('选择自定义封面') }} </button>
-                <button 
-                  type="button" 
-                  class="btn-cover-action btn-clear" 
-                  @click="() => handleClearCover(key)"
+                  <span class="btn-icon">📂</span> {{ $lt('从封面文件夹选择') }}
+                </button>
+
+                <!-- 选择自定义封面 -->
+                <button
+                  v-if="isCoverField"
+                  type="button"
+                  class="btn-cover-action"
+                  @click="handleBrowseImage(key)"
+                >
+                  <span class="btn-icon">📁</span> {{ $lt('选择自定义封面') }}
+                </button>
+
+                <!-- 清除封面 -->
+                <button
+                  v-if="isCoverField"
+                  type="button"
+                  class="btn-cover-action btn-clear"
                   :disabled="!formData[key]"
-                  :title="formData[key] ? '清除当前封面' : '当前无封面'"
+                  :title="formData[key] ? $lt('清除当前封面') : $lt('当前无封面')"
+                  @click="handleClearCover(key)"
                 >
-                  <span class="btn-icon">🗑️</span> {{ $lt('清除封面') }} </button>
+                  <span class="btn-icon">🗑️</span> {{ $lt('清除封面') }}
+                </button>
               </div>
             </div>
           </template>
@@ -631,7 +648,7 @@ export default {
     return {
       formData: initFormData(),
       initFormData,
-      tagInputRefs: {} as Record<string, any>,,
+      tagInputRefs: {} as Record<string, any>,
       showAiSearch: false,
       showAiPreview: false,
       aiQuery: '',
@@ -647,7 +664,7 @@ export default {
         tagsText: '',
         source: '',
         publishDate: ''
-      }
+      },
       /**
        * 已经读成 data URL 的封面预览。
        * 键是表单里的原始路径。相对路径不能直接当图片地址，读完再写进来，预览才会刷新。
