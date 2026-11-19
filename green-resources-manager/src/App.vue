@@ -13,6 +13,8 @@
       </div>
     </div>
 
+    <PluginModalHost />
+
     <!-- 标签栏 - 始终显示，覆盖在侧边栏上方 -->
     <TabBar @tabs-changed="onTabsChanged" v-show="!isLoading" />
 
@@ -329,6 +331,7 @@ import pageConfigManager from './utils/PageConfigManager.ts'
 import PageConfigEditor from './components/PageConfigEditor.vue'
 import pluginManager from './utils/PluginManager.ts'
 import pluginNavigationManager from './utils/PluginNavigationManager.ts'
+import PluginModalHost from './mod-host/components/PluginModalHost.vue'
 import { unlockAchievement } from './pages/user/AchievementView.vue'
 
 
@@ -341,7 +344,8 @@ export default {
     FunLoading,
     FunModal,
     ChangelogEntryCard,
-    PageConfigEditor
+    PageConfigEditor,
+    PluginModalHost
   },
   data() {
     return {
@@ -1919,6 +1923,7 @@ export default {
       this.showPluginView({ title, content, onMount })
     }
     window.addEventListener('plugin-show-custom-view', handlePluginShowCustomView as EventListener)
+    window.addEventListener('plugin-close-custom-view', () => this.closePluginView())
     
     // 监听自定义标题变化事件
     window.addEventListener('custom-app-title-changed', (event: CustomEvent) => {

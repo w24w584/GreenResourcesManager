@@ -1,0 +1,11 @@
+{
+  "id": "ai-assistant",
+  "name": "AI 助手",
+  "version": "1.0.0",
+  "description": "提供 AI 资源信息填充和服务商配置。",
+  "author": "GreenResourcesManager",
+  "entry": "index.js",
+  "icon": "AI",
+  "tags": ["AI", "资源信息", "设置"],
+  "enabledByDefault": true
+}

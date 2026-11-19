@@ -372,11 +372,12 @@ declare global {
       sqliteMigrateSettings: (customSaveDataPath?: string) => Promise<{ ok: boolean; message?: string }>
       sqliteGetSettings: () => Promise<{ ok: boolean; settings?: any; timestamp?: string; version?: string; message?: string }>
       sqliteSaveSettings: (settings: any) => Promise<{ ok: boolean; message?: string }>
-      aiGetConfig: () => Promise<{ provider: string; model: string; baseUrl: string; hasApiKey: boolean }>
-      aiSaveConfig: (config: { provider: string; model: string; baseUrl: string; apiKey: string }) => Promise<{ ok: boolean; config?: { provider: string; model: string; baseUrl: string; hasApiKey: boolean }; error?: string }>
-      aiResetConfig: () => Promise<{ ok: boolean; config: { provider: string; model: string; baseUrl: string; hasApiKey: boolean } }>
-      aiTestConnection: (config: { provider: string; model: string; baseUrl: string; apiKey: string }) => Promise<{ ok: boolean; message?: string; error?: string }>
-      aiGenerateResourceInfo: (query: string) => Promise<{ ok: boolean; data?: { title: string; summary: string; category: string; tags: string[]; source: string; publishDate: string }; error?: string }>
+      pluginCapabilityBind: (pluginId: string, token: string) => Promise<{ ok: boolean }>
+      pluginCapabilityRevoke: (pluginId: string, token: string) => Promise<{ ok: boolean }>
+      pluginConfigGet: (pluginId: string, token: string) => Promise<{ config: Record<string, unknown>; credentials: Record<string, boolean> }>
+      pluginConfigSave: (pluginId: string, token: string, config: Record<string, unknown>, credentials: Record<string, string | null>) => Promise<{ ok: boolean; config?: Record<string, unknown>; credentials?: Record<string, boolean>; error?: string }>
+      pluginConfigReset: (pluginId: string, token: string) => Promise<{ config: Record<string, unknown>; credentials: Record<string, boolean> }>
+      pluginRequest: (pluginId: string, token: string, options: { url: string; method?: 'GET' | 'POST'; headers?: Record<string, string>; body?: string; timeoutMs?: number; credentialKey?: string; credentialPrefix?: string; allowLocal?: boolean }) => Promise<{ status: number; ok: boolean; headers: Record<string, string>; body: string }>
       sqliteMigrateUser: (customSaveDataPath?: string) => Promise<{ ok: boolean; message?: string }>
       sqliteGetUser: () => Promise<{ ok: boolean; user?: any; timestamp?: string; version?: string; message?: string }>
       sqliteSaveUser: (user: any) => Promise<{ ok: boolean; message?: string }>

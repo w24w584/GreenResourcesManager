@@ -7,12 +7,12 @@
         <button class="btn-close" @click="handleClose">✕</button>
       </div>
       <div class="modal-body">
-        <div class="ai-fill-toolbar">
-          <button type="button" class="btn-ai-fill" @click="openAiSearch">
-            <span class="ai-label">AI</span>
-            AI 自动填充信息
-          </button>
-        </div>
+        <PluginResourceActions
+          :form-data="formData"
+          :form-fields="formFields"
+          :resource-name="resourceClass?.name || ''"
+          @apply="applyPluginPatch"
+        />
         <!-- 调试信息：如果 resourceClass 不可用，显示警告 -->
         <div v-if="mode === 'add' && typeChoices.length > 1" class="form-field-wrapper">
           <label class="form-label">{{ $lt('这种文件是') }}</label>
@@ -201,61 +201,44 @@
                   :title="$lt('使用漫画文件夹内第一张图片作为封面')"
                 >
                   <span class="btn-icon">🖼️</span> {{ $lt('使用第一张图片') }} </button>
-                 <!-- 漫画封面：从文件夹选择（自带） -->
-                <button
-                  v-if="isMangaCoverField"
-                  type="button"
-                  class="btn-cover-action"
-                  :disabled="!folderPathValue"
+                <!-- 漫画封面：从文件夹选择（自带） -->
+                <button 
+                  v-if="field instanceof FormField_SelectMangaCover"
+                  type="button" 
+                  class="btn-cover-action" 
+                  @click="() => handleSelectFromFolder(key)"
+                  :disabled="!getFolderPathValue()"
                   :title="$lt('从文件夹中挑选一张图片作为封面')"
-                  @click="handleSelectFromFolder(key)"
                 >
-                  <span class="btn-icon">📂</span> {{ $lt('从文件夹选择') }}
-                </button>
-
+                  <span class="btn-icon">📂</span> {{ $lt('从文件夹选择') }} </button>
                 <!-- 视频缩略图：随机封面 -->
-                <button
-                  v-if="isThumbnailField && enableRandomizeThumbnail"
-                  type="button"
-                  class="btn-cover-action"
-                  :disabled="!filePathValue"
-                  @click="handleRandomizeThumbnail(key)"
+                <button 
+                  v-if="field instanceof FormField_SelectVideoThumbnail && enableRandomizeThumbnail"
+                  type="button" 
+                  class="btn-cover-action" 
+                  @click="() => handleRandomizeThumbnail(key)"
+                  :disabled="!getFilePathValue()"
                 >
-                  <span class="btn-icon">🎲</span> {{ $lt('随机封面') }}
-                </button>
-
+                  <span class="btn-icon">🎲</span> {{ $lt('随机封面') }} </button>
                 <!-- 视频缩略图：从封面文件夹选择（用于文件夹） -->
-                <button
-                  v-if="isThumbnailField && enableSelectFromFolderCovers"
-                  type="button"
-                  class="btn-cover-action"
-                  :disabled="!folderPathValue"
-                  @click="handleSelectFromFolderCovers(key)"
+                <button 
+                  v-if="field instanceof FormField_SelectVideoThumbnail && enableSelectFromFolderCovers"
+                  type="button" 
+                  class="btn-cover-action" 
+                  @click="() => handleSelectFromFolderCovers(key)"
+                  :disabled="!getFolderPathValue()"
                 >
-                  <span class="btn-icon">📂</span> {{ $lt('从封面文件夹选择') }}
-                </button>
-
-                <!-- 选择自定义封面 -->
-                <button
-                  v-if="isCoverField"
-                  type="button"
-                  class="btn-cover-action"
-                  @click="handleBrowseImage(key)"
-                >
-                  <span class="btn-icon">📁</span> {{ $lt('选择自定义封面') }}
-                </button>
-
-                <!-- 清除封面 -->
-                <button
-                  v-if="isCoverField"
-                  type="button"
-                  class="btn-cover-action btn-clear"
+                  <span class="btn-icon">📂</span> {{ $lt('从封面文件夹选择') }} </button>
+                <button type="button" class="btn-cover-action" @click="() => handleBrowseImage(key)">
+                  <span class="btn-icon">📁</span> {{ $lt('选择自定义封面') }} </button>
+                <button 
+                  type="button" 
+                  class="btn-cover-action btn-clear" 
+                  @click="() => handleClearCover(key)"
                   :disabled="!formData[key]"
-                  :title="formData[key] ? $lt('清除当前封面') : $lt('当前无封面')"
-                  @click="handleClearCover(key)"
+                  :title="formData[key] ? '清除当前封面' : '当前无封面'"
                 >
-                  <span class="btn-icon">🗑️</span> {{ $lt('清除封面') }}
-                </button>
+                  <span class="btn-icon">🗑️</span> {{ $lt('清除封面') }} </button>
               </div>
             </div>
           </template>
@@ -316,49 +299,6 @@
         :available-tags="availableTags"
         @select-tag="handleSelectTag"
       />
-
-      <div v-if="showAiSearch" class="ai-modal-overlay" @mousedown.self="isAiSearching || closeAiDialogs()">
-        <section class="ai-modal-content" role="dialog" aria-modal="true" aria-labelledby="ai-search-title">
-          <header class="ai-modal-header">
-            <h3 id="ai-search-title">AI 自动填充资源信息</h3>
-            <button type="button" class="ai-close-button" aria-label="关闭" :disabled="isAiSearching" @click="closeAiDialogs">×</button>
-          </header>
-          <div class="ai-modal-body">
-            <p>输入资源名称 / 描述，AI 联网检索元信息。</p>
-            <textarea v-model="aiQuery" rows="5" placeholder="例如：游戏名称、作品名称或资源描述" :disabled="isAiSearching"></textarea>
-            <p v-if="aiError" class="ai-error" role="alert">{{ aiError }}</p>
-          </div>
-          <footer class="ai-modal-footer">
-            <button type="button" class="ai-secondary-button" :disabled="isAiSearching" @click="closeAiDialogs">取消</button>
-            <button type="button" class="ai-primary-button" :disabled="isAiSearching || aiCooldownRemaining > 0 || !aiQuery.trim()" @click="startAiSearch">
-              <span v-if="isAiSearching" class="ai-spinner" aria-hidden="true"></span>
-              {{ isAiSearching ? '正在检索…' : (aiCooldownRemaining ? `请稍候 ${aiCooldownRemaining} 秒` : '开始检索') }}
-            </button>
-          </footer>
-        </section>
-      </div>
-
-      <div v-if="showAiPreview" class="ai-modal-overlay" @mousedown.self="closeAiDialogs">
-        <section class="ai-modal-content ai-preview-content" role="dialog" aria-modal="true" aria-labelledby="ai-preview-title">
-          <header class="ai-modal-header">
-            <h3 id="ai-preview-title">AI 识别结果，请核对修改</h3>
-            <button type="button" class="ai-close-button" aria-label="关闭" @click="closeAiDialogs">×</button>
-          </header>
-          <div class="ai-modal-body ai-preview-fields">
-            <label>标题<input v-model="aiPreview.title" type="text"></label>
-            <label>简介<textarea v-model="aiPreview.summary" rows="3"></textarea></label>
-            <label>分类<input v-model="aiPreview.category" type="text"></label>
-            <label>标签<input v-model="aiPreview.tagsText" type="text" placeholder="多个标签用逗号分隔"></label>
-            <label>来源<input v-model="aiPreview.source" type="text"></label>
-            <label>发布日期<input v-model="aiPreview.publishDate" type="text" placeholder="YYYY-MM-DD"></label>
-          </div>
-          <footer class="ai-modal-footer ai-preview-footer">
-            <button type="button" class="ai-secondary-button" @click="closeAiDialogs">取消</button>
-            <button type="button" class="ai-secondary-button" :disabled="isAiSearching" @click="regenerateAiInfo">重新生成</button>
-            <button type="button" class="ai-primary-button" @click="applyAiInfo">确认填充</button>
-          </footer>
-        </section>
-      </div>
     </div>
   </div>
 </template>
@@ -373,6 +313,7 @@ import saveManager from '../utils/SaveManager.ts'
 import coverManager from '../utils/CoverManager.ts'
 import notify from '../utils/NotificationService.ts'
 import alertService from '../utils/AlertService.ts'
+import PluginResourceActions from '../mod-host/components/PluginResourceActions.vue'
 import {detectGameEngine} from '../utils/GameEngineDetector.ts'
 import {
   FormField as FormFieldType,
@@ -409,7 +350,8 @@ export default {
     FunTextarea,
     FunInput,
     FunSelect,
-    TagSelectionPanel
+    TagSelectionPanel,
+    PluginResourceActions
   },
   props: {
     visible: {
@@ -649,23 +591,7 @@ export default {
     return {
       formData: initFormData(),
       initFormData,
-      tagInputRefs: {} as Record<string, any>,
-      showAiSearch: false,
-      showAiPreview: false,
-      aiQuery: '',
-      aiError: '',
-      isAiSearching: false,
-      aiCooldownRemaining: 0,
-      aiCooldownTimer: null as ReturnType<typeof setInterval> | null,
-      aiRequestId: 0,
-      aiPreview: {
-        title: '',
-        summary: '',
-        category: '',
-        tagsText: '',
-        source: '',
-        publishDate: ''
-      },
+      tagInputRefs: {} as Record<string, any>, // 存储标签输入框的 refs
       /**
        * 已经读成 data URL 的封面预览。
        * 键是表单里的原始路径。相对路径不能直接当图片地址，读完再写进来，预览才会刷新。
@@ -750,7 +676,6 @@ export default {
   },
   watch: {
     visible(newVal) {
-      if (!newVal) this.closeAiDialogs()
       if (newVal) {
         // 使用 nextTick 确保 props 已经更新
         nextTick(() => {
@@ -805,102 +730,16 @@ export default {
       const value = (event.target as HTMLSelectElement).value
       this.$emit('change-type', value)
     },
-    openAiSearch() {
-      const findText = (keys: string[]) => {
-        for (const key of keys) {
-          const value = this.formData[key]
-          if (typeof value === 'string' && value.trim()) return value.trim()
+    /**
+     * 把插件返回的补丁写回表单。只接受当前表单里真实存在的字段，
+     * 避免插件写进不存在的属性（保存时会被静默丢掉，反而更难排查）。
+     */
+    applyPluginPatch(patch: Record<string, unknown>) {
+      for (const [key, value] of Object.entries(patch)) {
+        if (Object.prototype.hasOwnProperty.call(this.formData, key) && this.formFields[key]) {
+          (this.formData as Record<string, unknown>)[key] = value
         }
-        return ''
       }
-      const executablePath = this.getExecutablePathValue().trim()
-      const executableName = executablePath.split(/[\\/]/).pop()?.replace(/\.exe$/i, '').trim() || ''
-      const tags = Array.isArray(this.formData.tags) ? this.formData.tags.filter(Boolean).join(', ') : ''
-      this.aiQuery = [
-        findText(['name', 'title', 'resourceName']),
-        findText(['description', 'summary', 'intro', 'introduction']),
-        findText(['developer', 'author', 'publisher']) ? `开发者：${findText(['developer', 'author', 'publisher'])}` : '',
-        tags ? `已有标签：${tags}` : '',
-        executableName
-      ].filter(Boolean).join('\n\n')
-      this.aiError = ''
-      this.showAiPreview = false
-      this.showAiSearch = true
-    },
-    closeAiDialogs() {
-      this.aiRequestId += 1
-      this.isAiSearching = false
-      this.showAiSearch = false
-      this.showAiPreview = false
-      this.aiError = ''
-      if (this.aiCooldownTimer) {
-        clearInterval(this.aiCooldownTimer)
-        this.aiCooldownTimer = null
-      }
-      this.aiCooldownRemaining = 0
-    },
-    async startAiSearch() {
-      if (this.isAiSearching || this.aiCooldownRemaining > 0 || !this.aiQuery.trim()) return
-      this.aiError = ''
-      const api = window.electronAPI
-      if (!api?.aiGenerateResourceInfo) {
-        this.aiError = 'AI 检索仅在 Electron 桌面版中可用。'
-        return
-      }
-
-      this.isAiSearching = true
-      const requestId = ++this.aiRequestId
-      this.aiCooldownRemaining = 3
-      this.aiCooldownTimer = setInterval(() => {
-        this.aiCooldownRemaining = Math.max(0, this.aiCooldownRemaining - 1)
-        if (!this.aiCooldownRemaining && this.aiCooldownTimer) {
-          clearInterval(this.aiCooldownTimer)
-          this.aiCooldownTimer = null
-        }
-      }, 1000)
-
-      try {
-        const result = await api.aiGenerateResourceInfo(this.aiQuery.trim())
-        if (requestId !== this.aiRequestId) return
-        if (!result.ok) {
-          this.aiError = result.error || 'AI 检索失败，请稍后重试。'
-          return
-        }
-        this.aiPreview = {
-          title: result.data.title || '',
-          summary: result.data.summary || '',
-          category: result.data.category || '',
-          tagsText: Array.isArray(result.data.tags) ? result.data.tags.join(', ') : '',
-          source: result.data.source || '',
-          publishDate: result.data.publishDate || ''
-        }
-        this.showAiSearch = false
-        this.showAiPreview = true
-      } catch (error: any) {
-        if (requestId === this.aiRequestId) this.aiError = error.message || 'AI 检索失败，请检查网络后重试。'
-      } finally {
-        if (requestId === this.aiRequestId) this.isAiSearching = false
-      }
-    },
-    regenerateAiInfo() {
-      this.showAiPreview = false
-      this.showAiSearch = true
-      this.aiError = ''
-    },
-    applyAiInfo() {
-      const mappings = [
-        { aliases: ['name', 'title', 'resourceName'], value: this.aiPreview.title },
-        { aliases: ['description', 'summary', 'intro', 'introduction'], value: this.aiPreview.summary },
-        { aliases: ['category', 'resourceCategory'], value: this.aiPreview.category },
-        { aliases: ['tags', 'labels', 'genres'], value: this.aiPreview.tagsText.split(/[,，、]/).map((tag) => tag.trim()).filter(Boolean) },
-        { aliases: ['source', 'sourceInfo', 'sourceUrl'], value: this.aiPreview.source },
-        { aliases: ['publishDate', 'releaseDate', 'publicationDate', 'publishedAt'], value: this.aiPreview.publishDate }
-      ]
-      for (const mapping of mappings) {
-        const fieldKey = mapping.aliases.find((key) => Object.prototype.hasOwnProperty.call(this.formData, key) && this.formFields[key])
-        if (fieldKey && (mapping.value.length || Array.isArray(mapping.value))) this.formData[fieldKey] = mapping.value
-      }
-      this.closeAiDialogs()
     },
     // 安全地创建资源实例的辅助方法
     createResourceInstance() {
@@ -936,7 +775,7 @@ export default {
               Array.isArray(field.filters) &&
               field.filters.some((f: any) => 
                 f.extensions && f.extensions.some((ext: string) => 
-                  ['jpg', 'jpeg', 'jpe', 'jfif', 'png', 'gif', 'webp', 'ico'].includes(ext.toLowerCase())
+                  ['jpg', 'jpeg', 'jpe', 'jfif', 'png', 'gif', 'webp'].includes(ext.toLowerCase())
                 )
               ))
     },
@@ -972,18 +811,6 @@ export default {
         }
       }
       return ''
-    },
-    async fillExecutableCover(executablePath: string) {
-      const coverKey = ['coverPath', 'cover', 'thumbnail', 'thumbnailPath'].find((key) =>
-        Object.prototype.hasOwnProperty.call(this.formData, key) && this.formFields[key] && this.isCoverField(this.formFields[key])
-      )
-      if (!coverKey || String(this.formData[coverKey] || '').trim() || !window.electronAPI?.getFileIcon) return
-      try {
-        const iconResult = await window.electronAPI.getFileIcon(executablePath, 64)
-        if (iconResult?.success && iconResult.icon) this.formData[coverKey] = iconResult.icon
-      } catch (error) {
-        console.warn('[ResourcesEditDialog] 提取默认封面图标失败:', error)
-      }
     },
     // 获取文件夹路径的值（用于漫画封面选择等功能）
     getFolderPathValue(): string {
@@ -1275,10 +1102,6 @@ export default {
           }
 
           this.formData[key] = filePath
-
-          if (this.isExecutableFileField(field)) {
-            await this.fillExecutableCover(filePath)
-          }
           
           // 如果是可执行文件字段，自动提取名称（如果名称字段为空）
           if (this.isExecutableFileField(field)) {
@@ -1376,7 +1199,7 @@ export default {
     },
     isImageFile(filePath: string): boolean {
       if (!filePath) return false
-      const imageExtensions = ['.jpg', '.jpeg', '.jpe', '.jfif', '.png', '.gif', '.bmp', '.webp', '.svg', '.ico', 'jpg', 'jpeg', 'jpe', 'jfif', 'png', 'gif', 'bmp', 'webp', 'svg', 'ico']
+      const imageExtensions = ['.jpg', '.jpeg', '.jpe', '.jfif', '.png', '.gif', '.bmp', '.webp', '.svg', 'jpg', 'jpeg', 'jpe', 'jfif', 'png', 'gif', 'bmp', 'webp', 'svg']
       const fileExt = this.getFileExtension(filePath).toLowerCase()
       return imageExtensions.includes(fileExt) || imageExtensions.includes(`.${fileExt}`)
     },
@@ -1496,7 +1319,7 @@ export default {
           } else {
             // 封面字段使用图片文件选择
             const coverField = new FormField_SelectFile('封面', [
-              { name: '图片文件', extensions: ['jpg', 'jpeg', 'jpe', 'jfif', 'png', 'gif', 'webp', 'bmp', 'svg', 'ico'] }
+              { name: '图片文件', extensions: ['jpg', 'jpeg', 'jpe', 'jfif', 'png', 'gif', 'webp', 'bmp', 'svg'] }
             ])
             await this.handleBrowseFile(key, coverField)
           }
@@ -1985,16 +1808,6 @@ export default {
           }
         }
 
-        const coverKey = ['coverPath', 'cover', 'thumbnail', 'thumbnailPath'].find(key =>
-          Object.prototype.hasOwnProperty.call(resource, key)
-        )
-        const isGameOrSoftware = ['game', 'software'].includes(String(resource.resourceType || '').toLowerCase())
-        const executablePath = this.getExecutablePathValue().trim()
-        if (isGameOrSoftware && coverKey && !String(resource[coverKey] || '').trim() && executablePath && window.electronAPI?.getFileIcon) {
-          await this.fillExecutableCover(executablePath)
-          if (String(this.formData[coverKey] || '').trim()) resource[coverKey] = this.formData[coverKey]
-        }
-
         console.log('[ResourcesEditDialog] 准备触发 confirm 事件，resource:', resource)
         console.log('[ResourcesEditDialog] resource 所有字段:', Object.keys(resource))
         console.log('[ResourcesEditDialog] resourceType 字段:', resource.resourceType)
@@ -2360,72 +2173,6 @@ export default {
 .btn-auto-detect .btn-icon {
   font-size: 1rem;
 }
-
-.ai-fill-toolbar {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 16px;
-}
-
-.btn-ai-fill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border: 1px solid var(--accent-color);
-  border-radius: 6px;
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  cursor: pointer;
-}
-
-.btn-ai-fill:hover { background: var(--bg-secondary); }
-.ai-label { font-weight: 700; color: var(--accent-color); }
-
-.ai-modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 2200;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  background: rgba(0, 0, 0, .58);
-}
-
-.ai-modal-content {
-  width: min(560px, 94vw);
-  max-height: 90vh;
-  overflow: auto;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  box-shadow: 0 18px 50px rgba(0, 0, 0, .28);
-}
-
-.ai-preview-content { width: min(700px, 94vw); }
-.ai-modal-header, .ai-modal-footer { display: flex; align-items: center; gap: 10px; padding: 16px 20px; }
-.ai-modal-header { justify-content: space-between; border-bottom: 1px solid var(--border-color); }
-.ai-modal-header h3 { margin: 0; font-size: 1.05rem; }
-.ai-modal-body { padding: 18px 20px; }
-.ai-modal-body > p:first-child { margin-top: 0; color: var(--text-secondary); }
-.ai-modal-body textarea, .ai-preview-fields input { box-sizing: border-box; width: 100%; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); font: inherit; }
-.ai-modal-body textarea { resize: vertical; }
-.ai-modal-body textarea:focus, .ai-preview-fields input:focus { outline: 2px solid var(--accent-color); outline-offset: 1px; }
-.ai-modal-footer { justify-content: flex-end; border-top: 1px solid var(--border-color); }
-.ai-secondary-button, .ai-primary-button, .ai-close-button { min-height: 38px; padding: 0 14px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-tertiary); color: var(--text-primary); cursor: pointer; }
-.ai-primary-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-color: var(--accent-color); background: var(--accent-color); color: #fff; }
-.ai-secondary-button:disabled, .ai-primary-button:disabled { opacity: .55; cursor: not-allowed; }
-.ai-close-button { min-width: 36px; padding: 0; font-size: 1.35rem; }
-.ai-error { margin: 12px 0 0 !important; color: #c0392b !important; }
-.ai-preview-fields { display: grid; gap: 14px; }
-.ai-preview-fields label { display: grid; gap: 6px; font-weight: 600; }
-.ai-preview-fields label textarea { font-weight: 400; }
-.ai-spinner { width: 14px; height: 14px; border: 2px solid rgba(255, 255, 255, .45); border-top-color: #fff; border-radius: 50%; animation: ai-spin .7s linear infinite; }
-.ai-preview-footer { flex-wrap: wrap; }
-
-@keyframes ai-spin { to { transform: rotate(360deg); } }
 
 /* Tag 选择面板样式 */
 .tag-panel {

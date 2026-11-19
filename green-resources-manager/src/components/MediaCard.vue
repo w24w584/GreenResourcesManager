@@ -1193,6 +1193,10 @@ export default {
       this.setCachedImage(cacheKey, `file:///${normalizedPath}`)
     },
     getDefaultImage() {
+      const detailDefault = this.item?.constructor?.detailPanelConfig?.defaultImage
+      if (typeof detailDefault === 'string' && detailDefault.trim()) {
+        return detailDefault
+      }
       // 使用资源类的配置，如果没有配置则使用基类的默认值
       if (this.item && this.item.constructor && typeof this.item.constructor.getDefaultIcon === 'function') {
         return this.item.constructor.getDefaultIcon()

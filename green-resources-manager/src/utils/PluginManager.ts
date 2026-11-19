@@ -3,6 +3,8 @@
  * 负责扫描、加载和管理创意工坊插件
  */
 
+import { createHostApi, destroyHostApi } from '../mod-host/PluginHost'
+
 interface PluginManifest {
   id: string
   name: string
@@ -12,6 +14,7 @@ interface PluginManifest {
   entry?: string
   tags?: string[]
   icon?: string
+  enabledByDefault?: boolean
 }
 
 interface PluginInfo {
@@ -36,7 +39,7 @@ interface PluginInstance {
   loaded: boolean // 是否已加载
 }
 
-class PluginManager {
+export class PluginManager {
   private plugins: PluginInfo[] = []
   private loadedPlugins: Map<string, PluginInstance> = new Map()
   private modsDirectory: string = 'mods'
@@ -128,7 +131,7 @@ class PluginManager {
           }
 
           // 加载插件启用状态（从设置或本地存储）
-          const enabled = await this.getPluginEnabledStatus(manifest.id)
+          const enabled = await this.getPluginEnabledStatus(manifest.id, manifest.enabledByDefault === true)
 
           const pluginInfo: PluginInfo = {
             id: manifest.id,
@@ -161,7 +164,7 @@ class PluginManager {
   /**
    * 获取插件启用状态
    */
-  private async getPluginEnabledStatus(pluginId: string): Promise<boolean> {
+  private async getPluginEnabledStatus(pluginId: string, defaultEnabled = false): Promise<boolean> {
     try {
       // 从本地存储读取
       const storageKey = `plugin-${pluginId}-enabled`
@@ -171,7 +174,7 @@ class PluginManager {
       }
       
       // 默认禁用
-      return false
+      return defaultEnabled
     } catch (error) {
       console.error(`获取插件 ${pluginId} 启用状态失败:`, error)
       return false
@@ -194,28 +197,20 @@ class PluginManager {
         return true
       }
 
-      // 更新内存中的状态
-      plugin.enabled = enabled
-
-      // 保存到本地存储
       const storageKey = `plugin-${pluginId}-enabled`
-      localStorage.setItem(storageKey, enabled.toString())
-
-      // 如果启用，加载插件；如果禁用，卸载插件
       if (enabled) {
-        await this.loadPlugin(pluginId)
+        const loaded = await this.loadPlugin(pluginId)
+        if (!loaded) return false
       } else {
-        await this.unloadPlugin(pluginId)
+        const unloaded = await this.unloadPlugin(pluginId)
+        if (!unloaded) return false
       }
 
+      plugin.enabled = enabled
+      localStorage.setItem(storageKey, enabled.toString())
       return true
     } catch (error) {
       console.error(`设置插件 ${pluginId} 启用状态失败:`, error)
-      // 恢复状态
-      const plugin = this.plugins.find(p => p.id === pluginId)
-      if (plugin) {
-        plugin.enabled = !enabled
-      }
       return false
     }
   }
@@ -255,9 +250,8 @@ class PluginManager {
 
       const pluginCode = codeResult.content
 
-      // 创建插件 API
-      const { createPluginAPI } = await import('./PluginAPI')
-      const api = createPluginAPI(pluginId)
+      // 创建插件 API（宿主能力、配置、密钥、网络、UI 贡献都在 mod-host 里实现）
+      const api = await createHostApi(pluginId)
 
       // 执行插件代码
       // 插件代码使用 ES6 export default 语法，需要转换为 CommonJS
@@ -335,6 +329,10 @@ class PluginManager {
     } catch (error) {
       console.error(`加载插件 ${pluginId} 失败:`, error)
       return false
+    } finally {
+      if (!this.loadedPlugins.has(pluginId)) {
+        await destroyHostApi(pluginId)
+      }
     }
   }
 
@@ -346,6 +344,7 @@ class PluginManager {
       const instance = this.loadedPlugins.get(pluginId)
       if (!instance) {
         // 如果未加载，认为卸载成功
+        await destroyHostApi(pluginId)
         return true
       }
 
@@ -370,8 +369,9 @@ class PluginManager {
 
       this.removePluginStyles(pluginId)
 
-      // 从已加载列表中移除
+      // 从已加载列表中移除，并回收宿主能力 / UI 贡献
       this.loadedPlugins.delete(pluginId)
+      await destroyHostApi(pluginId)
 
       return true
     } catch (error) {

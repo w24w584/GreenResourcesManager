@@ -122,7 +122,7 @@
             @update:settings="handleSettingUpdate"
           />
 
-          <AISettings v-if="currentCategory === 'ai'" />
+          <PluginSettingsHost :page="getPluginSettingsPage() || null" />
         </div>
         
       </div>
@@ -152,7 +152,9 @@ import PetSettings from '../components/settings/PetSettings.vue'
 import PersonalizationSettings from '../components/settings/PersonalizationSettings.vue'
 import PageManagementSettings from '../components/settings/PageManagementSettings.vue'
 import LanguageSettings from '../components/settings/LanguageSettings.vue'
-import AISettings from '../components/settings/AISettings.vue'
+import pluginContributionManager, { type PluginSettingsPage } from '../mod-host/PluginContributions'
+import { findPluginSettingsPage, mergeSettingsCategories } from '../mod-host/settingsCategories'
+import PluginSettingsHost from '../mod-host/components/PluginSettingsHost.vue'
 import SaveDataSettings from '../components/settings/SaveDataSettings.vue'
 
 export default {
@@ -171,7 +173,7 @@ export default {
     PersonalizationSettings,
     PageManagementSettings,
     LanguageSettings,
-    AISettings
+    PluginSettingsHost,
     SaveDataSettings
   },
   setup() {
@@ -181,6 +183,9 @@ export default {
   data() {
     return {
       currentCategory: 'general',
+      pluginSettingsPages: [] as PluginSettingsPage[],
+      baseSettingsCategories: [] as any[],
+      pluginContributionsListener: null as (() => void) | null,
       settingsCategories: [
         { id: 'general', name: '通用', icon: '⚙️', description: '应用的基本设置和外观配置' },
         // 紧挨在通用下面。name 和 description 中英并列，故意不进语言包。
@@ -193,7 +198,6 @@ export default {
         },
         { id: 'save', name: '存档', icon: '💾', description: '存档位置、云存档和自动备份' },
         { id: 'personalization', name: '个性化', icon: '🎨', description: '个性化外观和主题设置' },
-        { id: 'ai', name: 'AI 设置', icon: 'AI', description: '配置 AI 服务商和本地密钥' },
         { id: 'pageManagement', name: '页面管理', icon: '🧩', description: '添加、编辑、排序或删除页面' },
         { id: 'games', name: '游戏', icon: '🎮', description: '游戏相关的设置选项' },
         { id: 'images', name: '图片', icon: '🖼️', description: '图片管理和显示设置' },
@@ -347,6 +351,20 @@ export default {
         return category.description
       }
       return this.t(`settings.descriptions.${this.currentCategory}`)
+    },
+
+    getPluginSettingsPage(): PluginSettingsPage | undefined {
+      return findPluginSettingsPage(this.pluginSettingsPages, this.currentCategory)
+    },
+
+    refreshPluginSettingsPages() {
+      if (!this.baseSettingsCategories.length) {
+        this.baseSettingsCategories = this.settingsCategories.map((category: any) => ({ ...category }))
+      }
+      this.pluginSettingsPages = pluginContributionManager.getSettingsPages()
+      this.settingsCategories = mergeSettingsCategories(this.baseSettingsCategories, this.pluginSettingsPages)
+      const categoryExists = this.settingsCategories.some((category) => category.id === this.currentCategory)
+      if (!categoryExists) this.currentCategory = 'general'
     },
     
     /**
@@ -1009,6 +1027,9 @@ export default {
     }
   },
   async mounted() {
+    this.pluginContributionsListener = () => this.refreshPluginSettingsPages()
+    window.addEventListener('plugin-contributions-updated', this.pluginContributionsListener)
+    this.refreshPluginSettingsPages()
     this.comicArchiveProgramListener = (event: Event) => {
       this.handleComicArchiveProgramSelected(event)
     }
@@ -1284,6 +1305,10 @@ export default {
   },
   
   beforeUnmount() {
+    if (this.pluginContributionsListener) {
+      window.removeEventListener('plugin-contributions-updated', this.pluginContributionsListener)
+      this.pluginContributionsListener = null
+    }
     if (this.comicArchiveProgramListener) {
       window.removeEventListener('comic-archive-program-selected', this.comicArchiveProgramListener)
       this.comicArchiveProgramListener = null
@@ -1320,15 +1345,19 @@ export default {
 
 .settings-sidebar {
   width: 250px;
+  min-height: 0;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .settings-nav {
   flex: 1;
+  min-height: 0;
   padding: 10px 0;
+  overflow-y: auto;
 }
 
 .nav-item {

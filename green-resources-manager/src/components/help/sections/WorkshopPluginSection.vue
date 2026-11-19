@@ -1,8 +1,8 @@
 <template>
   <HelpSection
     :title="$lt('🧩 自定义功能')"
-    :subtitle="$lt('用 mods 里的插件给侧边栏加一个新入口')"
-    :intro="$lt('插件适合程序里原来没有的功能。它不会变成一张收文件的资源页，而是自己登记一个侧边栏入口，点进去打开自己的页面。')"
+    :subtitle="$lt('用 mods 扩展设置页、资源编辑动作或自定义功能')"
+    :intro="$lt('插件除了新增侧边栏页面，也可以向设置页注册分类，或在资源编辑窗口提供动作；插件关闭后，这些入口会一起移除。')"
   >
     <DetailCard :title="$lt('插件放在哪')">
       <p>{{ $lt('放在应用根目录的 mods 文件夹。创意工坊页面可以打开这个文件夹。每个插件是一个子文件夹，里面至少要有 manifest.json 和入口脚本，默认是 index.js。') }}</p>
@@ -24,6 +24,9 @@
     </DetailCard>
     <DetailCard :title="$lt('打开自己的页面')">
       <p>{{ $lt('api.ui.showCustomView({ title, content, onMount })。content 是一段 HTML。onMount 会拿到页面容器，用来给按钮绑定点击。') }}</p>
+    </DetailCard>
+    <DetailCard :title="$lt('扩展设置页和资源编辑')">
+      <p>{{ $lt('api.settings.registerPage 可以注册设置分类；api.resources.registerEditAction 可以在资源编辑窗口加动作，回调用 apply(patch) 填写当前表单已有字段。ai-assistant 是完整示例。') }}</p>
     </DetailCard>
     <DetailCard :title="$lt('发布到公共工坊')">
       <p>{{ $lt('在插件自己的 GitHub 仓库发布 Release，把 manifest.json、入口脚本和可选的 styles.css 作为资源上传，再把仓库写进 workshop/community-mods.json。客户端会从最新 Release 读取文件和版本。') }}</p>

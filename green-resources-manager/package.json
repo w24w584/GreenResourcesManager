@@ -98,6 +98,10 @@
       {
         "from": "configs",
         "to": "configs"
+      },
+      {
+        "from": "mods",
+        "to": "mods"
       }
     ],
     "publish": {
@@ -131,8 +135,7 @@
           "arch": [
             "x64"
           ]
-        },
-        { "target": "zip", "arch": ["x64"] }
+        }
       ],
       "icon": "public/butter-icon.ico"
     },

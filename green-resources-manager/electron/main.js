@@ -98,7 +98,7 @@ const workshopHandlers = require('./ipc/workshop-handlers')
 const pathHandlers = require('./ipc/path-handlers')
 const systemHandlers = require('./ipc/system-handlers')
 const settingsHandlers = require('./ipc/settings-handlers')
-const aiHandlers = require('./ipc/ai-handlers')
+const pluginCapabilityHandlers = require('./ipc/plugin-capability-handlers')
 const mediaHandlers = require('./ipc/media-handlers')
 const tabHandlers = require('./ipc/tab-handlers')
 const videoPlayerHandlers = require('./ipc/video-player-handlers')
@@ -319,8 +319,13 @@ if (!gotTheLock) {
     // 注册设置相关的 IPC 处理器
     settingsHandlers.registerIpcHandlers(ipcMain, app, dialog, () => mainWindowModule.getMainWindow())
 
-    // 注册 AI 配置和请求处理器，API 密钥只保存在主进程
-    aiHandlers.registerIpcHandlers(ipcMain, app, safeStorage)
+    // 注册插件通用安全能力：插件隔离配置、加密凭据与受限 HTTPS 请求
+    pluginCapabilityHandlers.registerIpcHandlers(
+      ipcMain,
+      app,
+      safeStorage,
+      () => mainWindowModule.getMainWindow()?.webContents
+    )
     
     // 注册媒体相关的 IPC 处理器
     mediaHandlers.registerIpcHandlers(ipcMain, shell, pathUtils)
