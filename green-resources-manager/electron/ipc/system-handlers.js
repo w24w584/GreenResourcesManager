@@ -1293,7 +1293,7 @@ $results | ConvertTo-Json -Depth 10
       '    }',
       '  }',
       '}',
-      '"@',
+      '"@ -ReferencedAssemblies System.Drawing',
       "[GrCoverIcon]::ToBase64('" + escapedPath + "', " + pixels + ")",
       '} catch {',
       'Write-Output ("ERROR: " + $_.Exception.Message)',
@@ -1348,8 +1348,18 @@ $results | ConvertTo-Json -Depth 10
       }
 
       // 封面需要大图。系统自带接口最大大约 48 像素，exe 里往往有更大的图标。
-      if (Number(size) > 32 && ext === '.exe') {
-        const largeIcon = await extractLargeFileIcon(filePath, size)
+      // 快捷方式本身没有图标资源，先解析到目标程序，再按 exe 的方式取大图。
+      let iconSource = filePath
+      if (ext === '.lnk') {
+        try {
+          const shortcut = shell.readShortcutLink(filePath)
+          if (shortcut?.target) iconSource = shortcut.target
+        } catch (error) {
+          console.warn('解析快捷方式目标失败，改用快捷方式自身的图标:', error.message)
+        }
+      }
+      if (Number(size) > 32 && (ext === '.exe' || ext === '.lnk')) {
+        const largeIcon = await extractLargeFileIcon(iconSource, size)
         if (largeIcon?.success && largeIcon.icon) return largeIcon
       }
 
