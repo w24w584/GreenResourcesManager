@@ -854,6 +854,8 @@ export default defineComponent({
     const memberPickerSelected = ref<Set<string>>(new Set())
     /** 多选之后选择要放进哪个合集。 */
     const showCollectionPicker = ref(false)
+    /** 右键单张卡片加入合集时的目标资源；空字符串表示用当前多选。 */
+    const collectionPickerTargetId = ref('')
     /** 是否显示番剧和视频合集互相转换的确认框。 */
     const showConvertConfirm = ref(false)
     /** 转换确认框的标题。 */
@@ -1883,6 +1885,11 @@ export default defineComponent({
           merged.splice(removeIndex >= 0 ? removeIndex : merged.length, 0, ...convertItems)
         }
         if (isCollectionRecord(contextMenuTarget.value)) return merged
+        // 单张资源可以直接加入合集；已经在合集里时用“移出合集”，不重复显示。
+        if (!currentCollectionId.value && collectionResourceId(contextMenuTarget.value)) {
+          const removeIndex = merged.findIndex(item => item.key === 'remove')
+          merged.splice(removeIndex >= 0 ? removeIndex : merged.length, 0, { key: 'addToCollection', icon: '📁', label: '加入合集' })
+        }
         return [...merged, { key: 'scraper', icon: '📥', label: '刮削' }]
       }
     })
@@ -3165,11 +3172,18 @@ export default defineComponent({
 
     const closeCollectionPicker = () => {
       showCollectionPicker.value = false
+      collectionPickerTargetId.value = ''
     }
 
-    /** 多选之后打开合集名单。没有合集时先提示去创建。 */
-    const openCollectionPicker = () => {
-      if (selectedItems.value.size === 0) {
+    /**
+     * 打开合集名单。
+     * 单张卡片右键进来时只处理这一条；多选时处理勾中的全部资源。
+     * @param target 单张卡片；不传表示使用当前多选
+     */
+    const openCollectionPicker = (target?: any) => {
+      const targetId = target ? collectionResourceId(target) : ''
+      const ids = targetId ? [targetId] : Array.from(selectedItems.value)
+      if (ids.length === 0) {
         notify.toast('warning', '加入合集', '请先选择资源')
         return
       }
@@ -3177,16 +3191,19 @@ export default defineComponent({
         notify.toast('warning', '加入合集', '还没有合集，请先创建')
         return
       }
+      collectionPickerTargetId.value = targetId
       showCollectionPicker.value = true
     }
 
     /**
-     * 把当前多选放进一个合集。合集自己不能成为成员。
+     * 把多选或右键的那一条放进一个合集。合集自己不能成为成员。
      * @param collectionId 目标合集
      */
     const confirmAddSelectionToCollection = async (collectionId: string) => {
+      const targetId = collectionPickerTargetId.value
+      const ids = targetId ? [targetId] : Array.from(selectedItems.value)
       let count = 0
-      for (const id of selectedItems.value) {
+      for (const id of ids) {
         const item = items.value.find(entry => collectionResourceId(entry) === id)
         if (!item || isCollectionRecord(item)) continue
         moveResourceIntoCollection(collectionId, id)
@@ -3229,6 +3246,20 @@ export default defineComponent({
       crudConfig: {
         items: items,
         onAdd: async (data: any) => {
+          // 同一个文件重复添加时只提示，不再写一条新记录。
+          const incomingPath = readItemPath(data)
+          if (incomingPath && pageAlreadyHas(incomingPath)) {
+            const existing = items.value.find((item: any) => {
+              const itemPath = readItemPath(item)
+              return !!itemPath && isSameResourcePath(itemPath, incomingPath)
+            })
+            const existingName = existing
+              ? String(BaseResources.extractPrimitiveValue(existing.name?.value ?? existing.name) || '')
+              : ''
+            notify.toast('warning', '重复添加', existingName ? `「${existingName}」已经在当前列表里了` : '这个文件已经在当前列表里了')
+            return null as any
+          }
+
           const newItem = new (addResourceClass.value || ResourceClass)()
           console.log('[GenericResourceView] onAdd 开始 - data:', data)
           console.log('[GenericResourceView] onAdd 开始 - newItem 初始 id:', newItem.id?.value)
@@ -4223,7 +4254,7 @@ export default defineComponent({
     contextMenuHandlers.batchAddTag = () => handleBatchAddTag()
     contextMenuHandlers.batchDeleteTag = () => handleBatchDeleteTag()
     contextMenuHandlers.batchDelete = () => handleBatchDelete()
-    contextMenuHandlers.addToCollection = () => openCollectionPicker()
+    contextMenuHandlers.addToCollection = (item: any) => openCollectionPicker(isMultiSelectMode.value ? undefined : item)
     contextMenuHandlers.removeFromCollection = () => removeSelectionFromCollection()
 
     /**
