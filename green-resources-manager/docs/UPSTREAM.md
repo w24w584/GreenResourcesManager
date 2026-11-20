@@ -156,6 +156,20 @@ if (typeof detailDefault === 'string' && detailDefault.trim()) {
 
 让卡片缺图时使用资源类自己的默认图（例如视频的 `./default-video.png`），和详情面板保持一致。
 
+## 本地待上游合并的补丁
+
+以下改动是准备单独提给上游的 PR。合并前同步上游时要保留；上游合并后，`git rebase upstream/main` 会自动丢掉对应提交。
+
+### `electron/ipc/system-handlers.js`
+
+1. `extractLargeFileIcon` 的 `Add-Type` 必须带 `-ReferencedAssemblies System.Drawing`。Windows PowerShell 5.1 下缺少引用会编译失败，函数返回空，封面回退到 32px 图标。
+2. `.lnk` 先用 `shell.readShortcutLink(filePath)` 解析目标程序，再调用 `extractLargeFileIcon`；解析失败时仍回退到快捷方式自身图标。
+
+### `src/components/GenericResourceView.vue`
+
+1. `onAdd` 开头用 `readItemPath` / `pageAlreadyHas` / `isSameResourcePath` 拦截同路径重复添加，命中时只提示，不写库。
+2. 单张卡片右键“加入合集”：保留 `collectionPickerTargetId`、`openCollectionPicker(target)`、`confirmAddSelectionToCollection` 的单目标分支，以及 `contextMenuItems` 里插入的 `addToCollection` 项。
+
 ## 同步步骤
 
 ```bash
@@ -182,6 +196,6 @@ npm run build
 
 - `configs/resources/*.ts` 保持上游原样。AI 插件只根据当前表单里真实存在的字段生成内容，不要为了 AI 往资源类里加 `sourceInfo`、`publishDate` 之类的字段。
 - 不要重新加入 `pnpm-lock.yaml`、`package.json` 的 `zip` 打包目标或 `.npmrc` 里的 `ELECTRON_BUILDER_BINARIES_MIRROR`。发布工作流已经统一用 `npm ci` 和 `Compress-Archive` 生成压缩包。
-- 图标读取直接用上游的 `get-file-icon`（`extractLargeFileIcon` + `app.getFileIcon`）。除非能复现具体问题，不要再引入 PE 图标解析或 `.ico` 选择器改动。
+- 图标读取使用上游的 `get-file-icon`。`extractLargeFileIcon` 的 `Add-Type` 需要 `-ReferencedAssemblies System.Drawing`，`.lnk` 先解析目标程序；不要重新引入 PE 图标解析或 `.ico` 选择器改动。
 - 插件代码由 `new Function` 执行，视为可信代码；不要把不受信任的第三方脚本直接放进 `mods`。
 - 网络请求由主进程发起，默认拒绝本机和私网地址；本地模型必须显式传 `allowLocal: true`。
