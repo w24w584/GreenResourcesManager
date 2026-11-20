@@ -143,19 +143,6 @@ if (typeof window !== 'undefined') {
 
 否则打包后的应用不会带上内置插件。
 
-### `src/components/MediaCard.vue`
-
-`getDefaultImage()` 开头保留：
-
-```ts
-const detailDefault = this.item?.constructor?.detailPanelConfig?.defaultImage
-if (typeof detailDefault === 'string' && detailDefault.trim()) {
-  return detailDefault
-}
-```
-
-让卡片缺图时使用资源类自己的默认图（例如视频的 `./default-video.png`），和详情面板保持一致。
-
 ## 本地待上游合并的补丁
 
 以下改动是准备单独提给上游的 PR。合并前同步上游时要保留；上游合并后，`git rebase upstream/main` 会自动丢掉对应提交。
@@ -164,6 +151,10 @@ if (typeof detailDefault === 'string' && detailDefault.trim()) {
 
 1. `extractLargeFileIcon` 的 `Add-Type` 必须带 `-ReferencedAssemblies System.Drawing`。Windows PowerShell 5.1 下缺少引用会编译失败，函数返回空，封面回退到 32px 图标。
 2. `.lnk` 先用 `shell.readShortcutLink(filePath)` 解析目标程序，再调用 `extractLargeFileIcon`；解析失败时仍回退到快捷方式自身图标。
+
+### `src/components/MediaCard.vue`
+
+`getDefaultImage()` 开头保留：从 `detailPanelConfig.defaultImage` 取资源类的默认图，再回退到 `getDefaultIcon()`。卡片缺图时因此与详情面板保持一致。
 
 ### `src/components/GenericResourceView.vue`
 
