@@ -1,4 +1,5 @@
 import { createI18n } from 'vue-i18n'
+import type { I18n } from 'vue-i18n'
 import zhCN from './zh-CN'
 import zhTW from './zh-TW'
 import en from './en'
@@ -43,7 +44,7 @@ const getSavedLanguage = (): string => {
   return detectSystemLanguage()
 }
 
-const i18n = createI18n<typeof messages, string, false>({
+const i18n: I18n<{ messages: typeof messages }, {}, {}, string, false> = createI18n<{ messages: typeof messages }, string, false>({
   legacy: false,
   locale: getSavedLanguage(),
   fallbackLocale: 'zh-CN',
