@@ -14,7 +14,9 @@ const resourceFields = [
   { key: 'name', label: '名称', type: 'TextFormField', required: true },
   { key: 'description', label: '说明', type: 'TextFormField', required: false },
   { key: 'category', label: '分类', type: 'TextFormField', required: false },
-  { key: 'tags', label: '标签', type: 'TagsFormField', required: false }
+  { key: 'tags', label: '标签', type: 'TagsFormField', required: false },
+  // 打包压缩后宿主导出的类名会变成 Yt 这类短名，这里用短名模拟正式版。
+  { key: 'developers', label: '开发商', type: 'Yt', required: false }
 ]
 
 function waitForAsyncWork() {
@@ -49,7 +51,7 @@ describe('AI assistant mod', () => {
           if (options.url.includes('bing.com')) {
             return { ok: true, status: 200, body: '<rss><channel><item><title>Example</title><link>https://example.test</link><description>Metadata</description></item></channel></rss>' }
           }
-          return { ok: true, status: 200, body: JSON.stringify({ choices: [{ message: { content: '```json\n{"title":"Example title","summary":"Short summary","category":"RPG","tags":["Indie"],"unknown":"ignored"}\n```' } }] }) }
+          return { ok: true, status: 200, body: JSON.stringify({ choices: [{ message: { content: '```json\n{"title":"Example title","summary":"Short summary","category":"RPG","tags":["Indie"],"developers":"米哈游","unknown":"ignored"}\n```' } }] }) }
         }
       },
       ui: {
@@ -78,7 +80,7 @@ describe('AI assistant mod', () => {
 
     await editAction.onClick({
       resourceName: 'Game',
-      formData: { name: 'Example', description: '', category: '', tags: [] },
+      formData: { name: 'Example', description: '', category: '', tags: [], developers: [] },
       fields: resourceFields,
       apply
     })
@@ -108,7 +110,9 @@ describe('AI assistant mod', () => {
       name: 'Example title',
       description: 'Short summary',
       category: 'RPG',
-      tags: ['Indie']
+      tags: ['Indie'],
+      // 类名在正式版里被压缩成 Yt，仍要靠表单值形态认出这是多值字段，不能拆成逐字数组。
+      developers: ['米哈游']
     })
 
     await editAction.onClick({

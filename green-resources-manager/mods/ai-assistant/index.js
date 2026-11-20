@@ -743,9 +743,13 @@ async function searchWeb(api, query) {
 /* 字段识别                                                                    */
 /* -------------------------------------------------------------------------- */
 
-function fieldKind(field) {
+function fieldKind(field, formData) {
   const key = String(field.key || '')
   const type = String(field.type || '')
+  // 当前值是数组，就说明它是多值字段（标签、开发商、发行商、作者等），必须产出数组。
+  // 这条判据只看表单里的值，不依赖宿主的字段类名：打包压缩后 constructor.name 会变成
+  // Yt、q 这类短名，靠类名认类型的写法在正式版里会全部失效。
+  if (Array.isArray(formData?.[key])) return 'tags'
   if (/tags|labels|genres/i.test(key) || /Tags/i.test(type)) return 'tags'
   if (Array.isArray(field.options) && field.options.length) return 'select'
   if (/publishDate|releaseDate|publicationDate|publishedAt|(^|_)date$/i.test(key) || /Date/i.test(type)) return 'date'
@@ -760,12 +764,12 @@ function isFillableField(field) {
   return METADATA_FIELD_PATTERN.test(key)
 }
 
-function buildFieldSpecs(fields) {
+function buildFieldSpecs(fields, formData) {
   const source = Array.isArray(fields) ? fields : []
   return source
     .filter(isFillableField)
     .map((field) => {
-      const spec = { key: field.key, label: String(field.label || field.key), kind: fieldKind(field) }
+      const spec = { key: field.key, label: String(field.label || field.key), kind: fieldKind(field, formData) }
       if (Array.isArray(field.options) && field.options.length) spec.options = field.options.map(String)
       return spec
     })
@@ -1300,7 +1304,7 @@ function fieldRowMarkup(spec, value, currentValue) {
 }
 
 function openFillView(api, context, state) {
-  const specs = buildFieldSpecs(context.fields)
+  const specs = buildFieldSpecs(context.fields, context.formData)
   if (!specs.length) {
     api.ui.showNotification(t('fillTitle'), 'warning', { message: t('noResult') })
     return
@@ -1499,7 +1503,7 @@ export default {
         label: t('actionLabel'),
         icon: 'AI',
         order: 10,
-        when: (context) => buildFieldSpecs(context.fields).length > 0,
+        when: (context) => buildFieldSpecs(context.fields, context.formData).length > 0,
         onClick: async (context) => {
           const state = await loadState(api)
           openFillView(api, context, state)
