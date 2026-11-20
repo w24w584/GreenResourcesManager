@@ -3229,6 +3229,20 @@ export default defineComponent({
       crudConfig: {
         items: items,
         onAdd: async (data: any) => {
+          // 同一个文件重复添加时只提示，不再写一条新记录。
+          const incomingPath = readItemPath(data)
+          if (incomingPath && pageAlreadyHas(incomingPath)) {
+            const existing = items.value.find((item: any) => {
+              const itemPath = readItemPath(item)
+              return !!itemPath && isSameResourcePath(itemPath, incomingPath)
+            })
+            const existingName = existing
+              ? String(BaseResources.extractPrimitiveValue(existing.name?.value ?? existing.name) || '')
+              : ''
+            notify.toast('warning', '重复添加', existingName ? `「${existingName}」已经在当前列表里了` : '这个文件已经在当前列表里了')
+            return null as any
+          }
+
           const newItem = new (addResourceClass.value || ResourceClass)()
           console.log('[GenericResourceView] onAdd 开始 - data:', data)
           console.log('[GenericResourceView] onAdd 开始 - newItem 初始 id:', newItem.id?.value)
