@@ -98,6 +98,10 @@
       {
         "from": "configs",
         "to": "configs"
+      },
+      {
+        "from": "mods",
+        "to": "mods"
       }
     ],
     "publish": {

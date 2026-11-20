@@ -7,6 +7,12 @@
         <button class="btn-close" @click="handleClose">✕</button>
       </div>
       <div class="modal-body">
+        <PluginResourceActions
+          :form-data="formData"
+          :form-fields="formFields"
+          :resource-name="resourceClass?.name || ''"
+          @apply="applyPluginPatch"
+        />
         <!-- 调试信息：如果 resourceClass 不可用，显示警告 -->
         <div v-if="mode === 'add' && typeChoices.length > 1" class="form-field-wrapper">
           <label class="form-label">{{ $lt('这种文件是') }}</label>
@@ -307,6 +313,7 @@ import saveManager from '../utils/SaveManager.ts'
 import coverManager from '../utils/CoverManager.ts'
 import notify from '../utils/NotificationService.ts'
 import alertService from '../utils/AlertService.ts'
+import PluginResourceActions from '../mod-host/components/PluginResourceActions.vue'
 import {detectGameEngine} from '../utils/GameEngineDetector.ts'
 import {
   FormField as FormFieldType,
@@ -343,7 +350,8 @@ export default {
     FunTextarea,
     FunInput,
     FunSelect,
-    TagSelectionPanel
+    TagSelectionPanel,
+    PluginResourceActions
   },
   props: {
     visible: {
@@ -721,6 +729,17 @@ export default {
     onTypeChoiceChange(event: Event) {
       const value = (event.target as HTMLSelectElement).value
       this.$emit('change-type', value)
+    },
+    /**
+     * 把插件返回的补丁写回表单。只接受当前表单里真实存在的字段，
+     * 避免插件写进不存在的属性（保存时会被静默丢掉，反而更难排查）。
+     */
+    applyPluginPatch(patch: Record<string, unknown>) {
+      for (const [key, value] of Object.entries(patch)) {
+        if (Object.prototype.hasOwnProperty.call(this.formData, key) && this.formFields[key]) {
+          (this.formData as Record<string, unknown>)[key] = value
+        }
+      }
     },
     // 安全地创建资源实例的辅助方法
     createResourceInstance() {

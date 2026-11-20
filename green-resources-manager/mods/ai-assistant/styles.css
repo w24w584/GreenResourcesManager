@@ -1,0 +1,300 @@
+/* AI 助手插件样式
+ * 只使用宿主已有的 CSS 变量，跟随主题变化。 */
+
+.grm-ai-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 760px;
+  color: var(--text-primary);
+}
+
+.grm-ai-privacy {
+  margin: 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--primary-color, #4d8b66);
+  background: var(--bg-tertiary, rgba(80, 120, 90, .08));
+  color: var(--text-secondary);
+  font-size: .92rem;
+  line-height: 1.5;
+}
+
+.grm-ai-toolbar {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.grm-ai-toolbar .grm-ai-field {
+  flex: 1 1 220px;
+}
+
+.grm-ai-field {
+  display: grid;
+  gap: 6px;
+  color: var(--text-primary);
+}
+
+.grm-ai-field > span {
+  font-weight: 600;
+  font-size: .92rem;
+}
+
+.grm-ai-field--inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.grm-ai-field input,
+.grm-ai-field select,
+.grm-ai-field textarea,
+.grm-ai-quick input,
+.grm-ai-quick select,
+.grm-ai-result-field input,
+.grm-ai-result-field select,
+.grm-ai-result-field textarea {
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.grm-ai-field input:focus,
+.grm-ai-field select:focus,
+.grm-ai-field textarea:focus,
+.grm-ai-quick input:focus,
+.grm-ai-quick select:focus,
+.grm-ai-result-field input:focus,
+.grm-ai-result-field select:focus,
+.grm-ai-result-field textarea:focus {
+  outline: none;
+  border-color: var(--primary-color, #4d8b66);
+}
+
+.grm-ai-field small {
+  color: var(--text-secondary);
+  font-size: .82rem;
+}
+
+.grm-ai-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.grm-ai-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary-color, #4d8b66);
+}
+
+.grm-ai-hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: .9rem;
+  line-height: 1.5;
+}
+
+.grm-ai-hint--small {
+  font-size: .82rem;
+}
+
+.grm-ai-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 6px;
+}
+
+.grm-ai-spacer {
+  flex: 1;
+}
+
+.grm-ai-actions button,
+.grm-ai-quick button,
+.grm-ai-toolbar button,
+.grm-ai-result-toolbar button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color .2s ease, background .2s ease;
+}
+
+.grm-ai-actions button:hover:not(:disabled),
+.grm-ai-quick button:hover:not(:disabled),
+.grm-ai-toolbar button:hover:not(:disabled),
+.grm-ai-result-toolbar button:hover:not(:disabled) {
+  border-color: var(--primary-color, #4d8b66);
+  background: var(--bg-tertiary);
+}
+
+.grm-ai-actions button:disabled,
+.grm-ai-quick button:disabled,
+.grm-ai-toolbar button:disabled,
+.grm-ai-result-toolbar button:disabled {
+  opacity: .6;
+  cursor: progress;
+}
+
+.grm-ai-actions .grm-ai-primary,
+.grm-ai-quick .grm-ai-primary {
+  border-color: var(--primary-color, #4d8b66);
+  background: var(--primary-color, #4d8b66);
+  color: #fff;
+}
+
+.grm-ai-actions .grm-ai-primary:hover:not(:disabled),
+.grm-ai-quick .grm-ai-primary:hover:not(:disabled) {
+  background: var(--primary-color, #4d8b66);
+  filter: brightness(1.06);
+}
+
+.grm-ai-actions .grm-ai-danger {
+  border-color: var(--color-danger, #c0392b);
+  color: var(--color-danger, #c0392b);
+}
+
+.grm-ai-status,
+.grm-ai-flow-status,
+.grm-ai-quick-status {
+  min-height: 1.2em;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: .9rem;
+}
+
+.grm-ai-status.success,
+.grm-ai-flow-status.success,
+.grm-ai-key-status.saved,
+.grm-ai-quick-status.saved {
+  color: var(--color-success, #218653);
+}
+
+.grm-ai-status.error,
+.grm-ai-flow-status.error,
+.grm-ai-key-status.missing,
+.grm-ai-quick-status.error {
+  color: var(--color-danger, #c0392b);
+}
+
+.grm-ai-key-status {
+  font-size: .82rem;
+}
+
+/* 快速配置（编辑窗内联） */
+.grm-ai-quick {
+  margin: 8px 0;
+  padding: 12px 14px;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-tertiary, rgba(120, 120, 120, .06));
+}
+
+.grm-ai-quick[hidden] {
+  display: none !important;
+}
+
+.grm-ai-quick summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.grm-ai-quick .grm-ai-field {
+  margin-top: 10px;
+}
+
+.grm-ai-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.grm-ai-flow textarea {
+  resize: vertical;
+}
+
+.grm-ai-flow [hidden] {
+  display: none !important;
+}
+
+/* 结果预览 */
+.grm-ai-result-toolbar {
+  display: flex;
+  gap: 8px;
+}
+
+.grm-ai-result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 52vh;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.grm-ai-result-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+
+.grm-ai-result-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.grm-ai-result-head input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary-color, #4d8b66);
+}
+
+.grm-ai-result-head strong {
+  font-size: .95rem;
+}
+
+.grm-ai-current {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: .8rem;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .grm-ai-field--inline {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .grm-ai-current {
+    max-width: 100%;
+    margin-left: 0;
+  }
+}

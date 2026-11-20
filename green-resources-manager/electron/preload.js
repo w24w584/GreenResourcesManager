@@ -146,6 +146,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sqliteGetSettings: () => ipcRenderer.invoke('sqlite-get-settings'),
   // 保存设置数据到 SQLite
   sqliteSaveSettings: (settings) => ipcRenderer.invoke('sqlite-save-settings', settings),
+  // 插件通用能力。插件身份由 PluginAPI 固定后传入。
+  pluginCapabilityBind: (pluginId, token) => ipcRenderer.invoke('plugin-capability:bind', pluginId, token),
+  pluginCapabilityRevoke: (pluginId, token) => ipcRenderer.invoke('plugin-capability:revoke', pluginId, token),
+  pluginConfigGet: (pluginId, token) => ipcRenderer.invoke('plugin-capability:get-config', pluginId, token),
+  pluginConfigSave: (pluginId, token, config, credentials) => ipcRenderer.invoke('plugin-capability:save-config', pluginId, token, config, credentials),
+  pluginConfigReset: (pluginId, token) => ipcRenderer.invoke('plugin-capability:reset-config', pluginId, token),
+  pluginRequest: (pluginId, token, options) => ipcRenderer.invoke('plugin-capability:request', pluginId, token, options),
   // 从 JSON 迁移用户数据到 SQLite
   sqliteMigrateUser: (customSaveDataPath) => ipcRenderer.invoke('sqlite-migrate-user', customSaveDataPath),
   // 从 SQLite 读取用户数据

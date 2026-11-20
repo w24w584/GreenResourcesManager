@@ -44,9 +44,7 @@ function patchConsole() {
 
 patchConsole()
 
-const { app, BrowserWindow, dialog, ipcMain, shell, screen, nativeImage, protocol } = require('electron')
-
-patchConsole()
+const { app, BrowserWindow, dialog, ipcMain, shell, screen, nativeImage, protocol, safeStorage } = require('electron')
 
 /**
  * Electron 用这个对话框展示主进程里没接住的异常。
@@ -100,6 +98,7 @@ const workshopHandlers = require('./ipc/workshop-handlers')
 const pathHandlers = require('./ipc/path-handlers')
 const systemHandlers = require('./ipc/system-handlers')
 const settingsHandlers = require('./ipc/settings-handlers')
+const pluginCapabilityHandlers = require('./ipc/plugin-capability-handlers')
 const mediaHandlers = require('./ipc/media-handlers')
 const tabHandlers = require('./ipc/tab-handlers')
 const videoPlayerHandlers = require('./ipc/video-player-handlers')
@@ -319,6 +318,14 @@ if (!gotTheLock) {
     
     // 注册设置相关的 IPC 处理器
     settingsHandlers.registerIpcHandlers(ipcMain, app, dialog, () => mainWindowModule.getMainWindow())
+
+    // 注册插件通用安全能力：插件隔离配置、加密凭据与受限 HTTPS 请求
+    pluginCapabilityHandlers.registerIpcHandlers(
+      ipcMain,
+      app,
+      safeStorage,
+      () => mainWindowModule.getMainWindow()?.webContents
+    )
     
     // 注册媒体相关的 IPC 处理器
     mediaHandlers.registerIpcHandlers(ipcMain, shell, pathUtils)
